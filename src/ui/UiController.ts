@@ -37,6 +37,9 @@ export class UiController {
         this.el<HTMLInputElement>("cbShowBodies").onchange = () => {
             this.renderer.showBodies = this.el<HTMLInputElement>("cbShowBodies").checked
         }
+        this.el<HTMLInputElement>("cbRealisticLook").onchange = () => {
+            this.renderer.realisticLook = this.el<HTMLInputElement>("cbRealisticLook").checked
+        }
         this.el<HTMLInputElement>("cbShowAxis").onchange = () => {
             this.renderer.showAxis = this.el<HTMLInputElement>("cbShowAxis").checked
         }
@@ -115,6 +118,7 @@ export class UiController {
     public syncFromRenderer(): void {
         this.el<HTMLInputElement>("cbPause").checked = this.renderer.paused
         this.el<HTMLInputElement>("cbShowBodies").checked = this.renderer.showBodies
+        this.el<HTMLInputElement>("cbRealisticLook").checked = this.renderer.realisticLook
         this.el<HTMLInputElement>("cbShowAxis").checked = this.renderer.showAxis
         this.el<HTMLInputElement>("cbShowStat").checked = this.renderer.showStat
         this.el<HTMLInputElement>("cbShowCom").checked = this.renderer.showCom

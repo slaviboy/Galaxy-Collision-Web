@@ -3,10 +3,13 @@ import { mat4, vec3 } from 'gl-matrix'
 import { VertexColor } from '../entities/VertexColor'
 import { VertexBufferLines } from '../vertices/VertexBufferLines'
 import { VertexBufferParticles } from '../vertices/VertexBufferParticles'
+import { VertexBufferGalaxyStars } from '../vertices/VertexBufferGalaxyStars'
+import { VertexBufferGalaxyDust } from '../vertices/VertexBufferGalaxyDust'
 import { ModelNBody } from './ModelNBody'
 import { IntegratorADB6 } from './IntegratorADB6'
 import { BHTreeNode } from './BHTree'
 import { Vec3 } from '../entities/Vec3'
+import { GalaxyAppearance } from './GalaxyAppearance'
 
 /** Bit flags for overlays and simulation control (same values as C++ NBodyWnd). */
 export enum DisplayState {
@@ -42,6 +45,13 @@ export class CollisionRenderer {
     private vertTree: VertexBufferLines;
     private vertRoi: VertexBufferLines;
     private vertBodies: VertexBufferParticles;
+    private vertGalaxy: VertexBufferGalaxyStars;
+    private vertGalaxyDust: VertexBufferGalaxyDust;
+    private appearance: GalaxyAppearance = new GalaxyAppearance();
+    /** Galaxy-Renderer look (dust, red giants, H2) instead of white dots. */
+    private _realisticLook: boolean = false;
+    /** Wall-clock seconds for star flicker / H2 pulse. */
+    private visualTime: number = 0;
 
     /** Orthographic field of view (length of an axis in parsecs). C++ starts at 30. */
     private _fov: number = 30;
@@ -95,6 +105,8 @@ export class CollisionRenderer {
         this.vertTree = new VertexBufferLines(this.gl, 1, this.gl.DYNAMIC_DRAW);
         this.vertRoi = new VertexBufferLines(this.gl, 1, this.gl.DYNAMIC_DRAW);
         this.vertBodies = new VertexBufferParticles(this.gl);
+        this.vertGalaxy = new VertexBufferGalaxyStars(this.gl);
+        this.vertGalaxyDust = new VertexBufferGalaxyDust(this.gl);
 
         this.statsEl = document.getElementById("statsOverlay");
         this.helpEl = document.getElementById("helpOverlay");
@@ -154,6 +166,21 @@ export class CollisionRenderer {
 
     public set showBodies(value: boolean) {
         this.setFlag(DisplayState.BODIES, value);
+    }
+
+    /**
+     * When true, bodies are drawn with Galaxy-Renderer sprites (dust, red
+     * giants, flickering stars, H2) instead of white dots. Physics is unchanged.
+     */
+    public get realisticLook(): boolean {
+        return this._realisticLook;
+    }
+
+    public set realisticLook(value: boolean) {
+        this._realisticLook = value;
+        if (value) {
+            this.rebuildAppearance();
+        }
     }
 
     public get showAxis(): boolean {
@@ -342,6 +369,14 @@ export class CollisionRenderer {
             this._galaxy2X, this._galaxy2Y);
         this.solver = new IntegratorADB6(this.model, this.model.getSuggestedTimeStep());
         this.solver.setInitialState(this.model.getInitialState());
+        if (this._realisticLook) {
+            this.rebuildAppearance();
+        }
+    }
+
+    /** Assigns visual-only star / dust / H2 sprites to the current n-body particles. */
+    private rebuildAppearance(): void {
+        this.appearance.rebuild(this.solver.getState(), this._galaxy1Stars, this.model.getN());
     }
 
     /** Cycles tree overlay: off → approximation cells → complete tree → off. */
@@ -367,6 +402,8 @@ export class CollisionRenderer {
         this.vertTree.initialize();
         this.vertRoi.initialize();
         this.vertBodies.initialize();
+        this.vertGalaxy.initialize();
+        this.vertGalaxyDust.initialize();
 
         this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
         this.gl.disable(this.gl.DEPTH_TEST);
@@ -672,7 +709,18 @@ export class CollisionRenderer {
             this.updateTree();
         }
         if (this.showBodies) {
-            this.vertBodies.updateFromState(this.solver.getState(), this.model.getN());
+            if (this._realisticLook) {
+                this.appearance.pack(this.solver.getState(), this.model.getN());
+                this.vertGalaxy.setShaderVariables(this.visualTime, 40, 40, 1);
+                this.vertGalaxy.updatePacked(this.appearance.getStarPacked(), this.appearance.starCount);
+                this.vertGalaxyDust.setShaderVariables(
+                    this.visualTime, 40, 40, 1,
+                    this._fov / Math.max(this.canvas.height, 1));
+                this.vertGalaxyDust.updatePacked(this.appearance.getGlowPacked(), this.appearance.glowVertexCount);
+            }
+            else {
+                this.vertBodies.updateFromState(this.solver.getState(), this.model.getN());
+            }
         }
 
         this.updateStats();
@@ -681,18 +729,29 @@ export class CollisionRenderer {
 
     /** Clears to dark blue and draws axis, tree, particles, then ROI. */
     private render(): void {
-        this.gl.clearColor(0.0, 0.0, 0.1, 1.0);
+        if (this._realisticLook) {
+            this.gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        }
+        else {
+            this.gl.clearColor(0.0, 0.0, 0.1, 1.0);
+        }
         this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
         this.adjustCamera();
 
-        if (this.showAxis) {
+        if (this.showAxis && !this._realisticLook) {
             this.vertAxis.draw(this.matView, this.matProjection);
         }
         if (this.hasFlag(DisplayState.TREE)) {
             this.vertTree.draw(this.matView, this.matProjection);
         }
         if (this.showBodies) {
-            this.vertBodies.draw(this.matView, this.matProjection);
+            if (this._realisticLook) {
+                this.vertGalaxy.draw(this.matView, this.matProjection);
+                this.vertGalaxyDust.draw(this.matView, this.matProjection);
+            }
+            else {
+                this.vertBodies.draw(this.matView, this.matProjection);
+            }
         }
         if (this.showRoi) {
             this.vertRoi.draw(this.matView, this.matProjection);
@@ -709,6 +768,7 @@ export class CollisionRenderer {
                 this.frameCount = 0;
                 this.fpsLastTime = timestamp;
             }
+            this.visualTime = timestamp * 0.001;
 
             this.update();
             this.render();
