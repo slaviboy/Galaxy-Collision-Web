@@ -711,10 +711,10 @@ export class CollisionRenderer {
         if (this.showBodies) {
             if (this._realisticLook) {
                 this.appearance.pack(this.solver.getState(), this.model.getN());
-                this.vertGalaxy.setShaderVariables(this.visualTime, 40, 40, 1);
+                this.vertGalaxy.setShaderVariables(this.visualTime, 55, 45, 1);
                 this.vertGalaxy.updatePacked(this.appearance.getStarPacked(), this.appearance.starCount);
                 this.vertGalaxyDust.setShaderVariables(
-                    this.visualTime, 40, 40, 1,
+                    this.visualTime, 55, 45, 1,
                     this._fov / Math.max(this.canvas.height, 1));
                 this.vertGalaxyDust.updatePacked(this.appearance.getGlowPacked(), this.appearance.glowVertexCount);
             }

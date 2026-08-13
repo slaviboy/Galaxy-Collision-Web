@@ -150,75 +150,117 @@ export class GalaxyAppearance {
         }
 
         if (disk.length > 0) {
-        // 2.) Dust — Galaxy.cpp: numDust == numStars, mag 0.02+0.15*rand,
-        // temp = baseTemp + rad/4.5. Extra copies so ~40k overlapping 70 px
-        // sprites match the C++ preset (40000 dust) on a small n-body disk.
-        const numDust = Math.min(40000, Math.max(disk.length * 8, disk.length))
-        for (let i = 0; i < numDust; ++i) {
-            const parent = disk[i % disk.length]
-            const g1 = parent < bh2
-            const rad = g1 ? radiusOf(parent, cx1, cy1) : radiusOf(parent, cx2, cy2)
-            const rMax = g1 ? rDisk1 : rDisk2
-            const scale = g1 ? 1 : 0.45
-            const ang = rnd() * 6.2832
-            // Keep dust on the stellar disk. Far scatter against empty space
-            // reads as isolated brown "globes" (see Galaxy-Renderer: dust sits
-            // on the same populated orbits as the stars).
-            const d = (0.01 + 0.08 * rnd()) * scale
-            push(
-                parent,
-                Math.cos(ang) * d,
-                Math.sin(ang) * d,
-                tempFromRad(rad, rMax, 0),
-                0.02 + 0.15 * rnd(),
-                VISUAL_DUST,
-                0,
-                0)
+        /**
+         * Visual-only two-arm spiral + bulge. Physics stays a round n-body
+         * disk; dust/H2 are painted on like Galaxy-Renderer density waves.
+         */
+        const armWeight = (x: number, y: number, cx: number, cy: number, rMax: number): number => {
+            const dx = x - cx
+            const dy = y - cy
+            const r = Math.sqrt(dx * dx + dy * dy)
+            const u = r / Math.max(rMax, 1e-6)
+            const theta = Math.atan2(dy, dx)
+            const phase = 2.0 * (theta - 3.4 * u)
+            let arm = 0.5 + 0.5 * Math.cos(phase)
+            arm = arm * arm * arm
+            const bulge = Math.exp(-u * 3.6)
+            return Math.min(1, bulge * 0.9 + arm * (0.35 + 0.65 * (1 - bulge)))
         }
 
-        // 3.) Filaments — Galaxy.cpp places a clump on nearby orbits
-        // (theta ±10°, small radius jitter), not a long straight line.
-        const filamentGroups = Math.max(1, Math.floor(numDust / 100))
-        for (let g = 0; g < filamentGroups; ++g) {
-            const parent = disk[Math.floor(rnd() * disk.length)]
+        const galaxyOf = (parent: number): { cx: number, cy: number, rMax: number, scale: number } => {
             const g1 = parent < bh2
-            const rad = g1 ? radiusOf(parent, cx1, cy1) : radiusOf(parent, cx2, cy2)
-            const rMax = g1 ? rDisk1 : rDisk2
-            const scale = g1 ? 1 : 0.45
-            const mag = 0.1 + 0.05 * rnd()
-            const count = 12 + Math.floor(rnd() * 28)
+            return {
+                cx: g1 ? cx1 : cx2,
+                cy: g1 ? cy1 : cy2,
+                rMax: g1 ? rDisk1 : rDisk2,
+                scale: g1 ? 1 : 0.45
+            }
+        }
+
+        // 2.) Dust — a faint haze on every disk star (the ISM) plus extra
+        // copies in the spiral arms. Sprites stay tight to stars so they
+        // merge into lanes instead of floating as isolated globes.
+        let dustBudget = 0
+        const dustCap = 40000
+        for (let s = 0; s < disk.length && dustBudget < dustCap; ++s) {
+            const parent = disk[s]
+            const g = galaxyOf(parent)
+            const px = state[parent * STATE_STRIDE]
+            const py = state[parent * STATE_STRIDE + 1]
+            const w = armWeight(px, py, g.cx, g.cy, g.rMax)
+            const rad = radiusOf(parent, g.cx, g.cy)
+            const copies = 2 + Math.floor(w * 6)
+            for (let k = 0; k < copies && dustBudget < dustCap; ++k) {
+                const ang = rnd() * 6.2832
+                const d = (0.01 + 0.06 * rnd()) * g.scale
+                push(
+                    parent,
+                    Math.cos(ang) * d,
+                    Math.sin(ang) * d,
+                    tempFromRad(rad, g.rMax, 0),
+                    0.04 + 0.12 * rnd(),
+                    VISUAL_DUST,
+                    0,
+                    0)
+                dustBudget++
+            }
+        }
+
+        // 3.) Filaments along arm crests (Galaxy.cpp type-2 clumps)
+        const filamentParents: number[] = []
+        for (let s = 0; s < disk.length; ++s) {
+            const parent = disk[s]
+            const g = galaxyOf(parent)
+            const w = armWeight(
+                state[parent * STATE_STRIDE],
+                state[parent * STATE_STRIDE + 1],
+                g.cx, g.cy, g.rMax)
+            if (w > 0.55) {
+                filamentParents.push(parent)
+            }
+        }
+        const filamentGroups = Math.min(
+            Math.max(4, Math.floor(filamentParents.length / 40)),
+            80)
+        if (filamentParents.length > 0) {
+        for (let g = 0; g < filamentGroups; ++g) {
+            const parent = filamentParents[Math.floor(rnd() * filamentParents.length)]
+            const gal = galaxyOf(parent)
+            const rad = radiusOf(parent, gal.cx, gal.cy)
+            const mag = 0.08 + 0.05 * rnd()
+            const count = 8 + Math.floor(rnd() * 14)
             const baseAng = rnd() * 6.2832
             for (let k = 0; k < count; ++k) {
-                const a = baseAng + (rnd() - 0.5) * 0.35
-                const d = (0.03 + 0.16 * rnd()) * scale
+                const a = baseAng + (rnd() - 0.5) * 0.28
+                const d = (0.02 + 0.1 * rnd()) * gal.scale
                 push(
                     parent,
                     Math.cos(a) * d,
                     Math.sin(a) * d,
-                    tempFromRad(rad, rMax, -1000),
-                    mag + 0.025 * rnd(),
+                    tempFromRad(rad, gal.rMax, -1000),
+                    mag + 0.02 * rnd(),
                     VISUAL_FILAMENT,
                     0,
                     0)
             }
         }
+        }
 
-        // 4.) H2 — Galaxy.cpp uses 400 regions for ~40k stars; most stay dark
-        // because ignition is density-wave based. Scale the count and pulse.
-        const numH2 = Math.max(6, Math.round(400 * (disk.length / 40000)))
+        // 4.) H2 in arm crests (star-forming regions)
+        const h2Parents = filamentParents.length > 0 ? filamentParents : disk
+        const numH2 = Math.min(48, Math.max(8, Math.floor(h2Parents.length / 80)))
         for (let h = 0; h < numH2; ++h) {
-            const parent = disk[Math.floor(rnd() * disk.length)]
+            const parent = h2Parents[Math.floor(rnd() * h2Parents.length)]
+            const gal = galaxyOf(parent)
             const phase = rnd() * 6.2832
-            const mag = 0.1 + 0.05 * rnd()
-            const temp = 6000 + (6000 * rnd()) - 3000
-            const g1 = parent < bh2
-            const scale = g1 ? 1 : 0.45
+            const mag = 0.08 + 0.05 * rnd()
+            const temp = 5500 + 2500 * rnd()
             const ang = rnd() * 6.2832
-            const d = (0.04 + 0.12 * rnd()) * scale
+            const d = (0.02 + 0.08 * rnd()) * gal.scale
             const ox = Math.cos(ang) * d
             const oy = Math.sin(ang) * d
-            push(parent, ox, oy, temp, mag, VISUAL_H2_HALO, phase, 0.25)
-            push(parent, ox, oy, temp, mag, VISUAL_H2_CORE, phase, 0.25)
+            push(parent, ox, oy, temp, mag, VISUAL_H2_HALO, phase, 0.22)
+            push(parent, ox, oy, temp, mag, VISUAL_H2_CORE, phase, 0.22)
         }
         }
 

@@ -152,10 +152,10 @@ export class VertexBufferGalaxyDust extends VertexBufferBase<VertexColor>
 
                 if (vertexType == 1) {
                     if ((features & 2) == 0) discard;
-                    FragColor = vec4(vertexColor.xyz, 0.07 * fade);
+                    FragColor = vec4(vertexColor.xyz, 0.055 * fade);
                 } else if (vertexType == 2) {
                     if ((features & 4) == 0) discard;
-                    FragColor = vec4(vertexColor.xyz, 0.08 * fade);
+                    FragColor = vec4(vertexColor.xyz, 0.07 * fade);
                 } else if (vertexType == 3) {
                     if ((features & 8) == 0) discard;
                     FragColor = vec4(vertexColor.xyz, 0.35 * fade);
