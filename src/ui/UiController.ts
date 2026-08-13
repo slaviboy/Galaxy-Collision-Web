@@ -1,5 +1,12 @@
 import { CollisionRenderer, TreeMode } from "../core/CollisionRenderer"
 
+/**
+ * Binds the HTML control panel to CollisionRenderer.
+ *
+ * Checkboxes and sliders write into the renderer; keyboard shortcuts on the
+ * renderer call `syncFromRenderer` via `setFlagsChangedCallback` so the
+ * panel stays consistent.
+ */
 export class UiController {
     private renderer: CollisionRenderer
 
@@ -10,6 +17,10 @@ export class UiController {
         this.renderer.setFlagsChangedCallback(() => this.syncFromRenderer())
     }
 
+    /**
+     * Looks up a DOM element by id and throws if it is missing
+     * (the overlay HTML must match these ids).
+     */
     private el<T extends HTMLElement>(id: string): T {
         const node = document.getElementById(id) as T
         if (node == null) {
@@ -18,6 +29,7 @@ export class UiController {
         return node
     }
 
+    /** Wires change/input/click handlers on the left-hand form. */
     private bindControls(): void {
         this.el<HTMLInputElement>("cbPause").onchange = () => {
             this.renderer.paused = this.el<HTMLInputElement>("cbPause").checked
@@ -61,6 +73,7 @@ export class UiController {
         }
     }
 
+    /** Copies renderer flags and slider values into the form controls. */
     public syncFromRenderer(): void {
         this.el<HTMLInputElement>("cbPause").checked = this.renderer.paused
         this.el<HTMLInputElement>("cbShowBodies").checked = this.renderer.showBodies

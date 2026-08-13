@@ -2,12 +2,20 @@ import { VertexColor } from '../entities/VertexColor'
 import { VertexBufferBase } from './VertexBufferBase'
 import { AttributeDefinition } from '../core/AttributeDefinition'
 
+/**
+ * Draws the n-body particles as white GL_POINTS of size 2.
+ * Each frame `updateFromState` copies (x, y) from the integrator's
+ * Float64Array into a reused Float32 VBO (z = 0, color = white).
+ */
 export class VertexBufferParticles extends VertexBufferBase<VertexColor>
 {
 	private readonly attPosition: number = 0;
 	private readonly attColor: number = 1;
+	/** Matches C++ `glPointSize(2)`. */
 	private pointSize: number = 2;
+	/** Staging buffer: 7 floats per particle (x,y,z,r,g,b,a). */
 	private floatArray: Float32Array | null = null;
+	/** Identity index list 0..N-1, allocated once. */
 	private indexArray: Uint32Array | null = null;
 
 	constructor(gl: WebGL2RenderingContext) {
@@ -20,6 +28,11 @@ export class VertexBufferParticles extends VertexBufferBase<VertexColor>
 		]);
 	}
 
+	/**
+	 * Uploads current particle positions from the packed state vector.
+	 * @param state Integrator state: [x, y, vx, vy] * count.
+	 * @param count Number of particles (N).
+	 */
 	public updateFromState(state: Float64Array, count: number): void {
 		const floatsPerVertex = 7;
 		if (this.floatArray == null || this.floatArray.length !== count * floatsPerVertex) {

@@ -1,6 +1,7 @@
 import { Vec2 } from '../entities/Vec2'
 import { ParticleData } from './Types'
 
+/** Child-quadrant indices of a 2D Barnes-Hut node (same order as C++). */
 export enum EQuadrant {
     NE = 0,
     NW,
@@ -9,32 +10,71 @@ export enum EQuadrant {
     NONE
 }
 
+/**
+ * One node of the Barnes-Hut quadtree.
+ *
+ * A node is either:
+ * - empty (`_num == 0`),
+ * - a leaf holding one particle (`_num == 1`), or
+ * - an internal node with up to four children (`_num > 1`).
+ *
+ * Force evaluation uses the opening criterion `d / r <= theta`:
+ * if the node is far enough, its total mass at the center of mass
+ * approximates all particles inside; otherwise the children are visited.
+ *
+ * Child nodes are taken from a static pool so `reset()` does not allocate.
+ */
 export class BHTreeNode {
+    /** Child quadrants NE, NW, SW, SE (may be null). */
     public quadNode: (BHTreeNode | null)[] = [null, null, null, null];
 
+    /** The single particle stored in a leaf; empty for internal nodes. */
     private _particle: ParticleData = new ParticleData();
+    /** Total mass of all particles in this subtree. */
     private _mass: number = 0;
+    /** Center of mass of this subtree. */
     private _cm: Vec2 = new Vec2();
+    /** Lower-left corner of the square cell. */
     private _min: Vec2 = new Vec2();
+    /** Upper-right corner of the square cell. */
     private _max: Vec2 = new Vec2();
+    /** Geometric center of the cell (used to pick a quadrant). */
     private _center: Vec2 = new Vec2();
+    /** Parent node; null for the root. */
     private _parent: BHTreeNode | null = null;
+    /** Particle count in this subtree. */
     private _num: number = 0;
+    /**
+     * Set during force calculation: true if this node was opened
+     * (too close to use the multipole approximation).
+     */
     private _bSubdivided: boolean = false;
 
+    /** Opening angle. Smaller = more accurate, more work. Default 0.9. */
     private static s_theta: number = 0.9;
+    /** Particles that share an identical position with an existing leaf. */
     private static s_renegades: ParticleData[] = [];
+    /** Gravitational constant in simulation units (set by ModelNBody). */
     public static s_gamma: number = 0;
+    /** Softening length squared (~0.1 pc) added inside the distance sqrt. */
     private static s_soft: number = 0.1 * 0.1;
+    /** Number of pairwise / node-particle force evaluations for particle 0. */
     private static s_nNumCalc: number = 0;
 
+    /** Reusable child nodes; index 0..poolUsed-1 are in use this frame. */
     private static pool: BHTreeNode[] = [];
     private static poolUsed: number = 0;
 
+    /**
+     * @param min Lower-left of the cell.
+     * @param max Upper-right of the cell.
+     * @param parent Parent node, or null for the root.
+     */
     constructor(min: Vec2, max: Vec2, parent: BHTreeNode | null = null) {
         this.init(min, max, parent);
     }
 
+    /** (Re)initializes fields so a pooled node can be reused. */
     private init(min: Vec2, max: Vec2, parent: BHTreeNode | null): void {
         this._particle.reset();
         this._mass = 0;
@@ -52,6 +92,7 @@ export class BHTreeNode {
         this.quadNode[0] = this.quadNode[1] = this.quadNode[2] = this.quadNode[3] = null;
     }
 
+    /** Returns a recycled or newly allocated child node. */
     private static acquire(min: Vec2, max: Vec2, parent: BHTreeNode): BHTreeNode {
         if (BHTreeNode.poolUsed < BHTreeNode.pool.length) {
             const node = BHTreeNode.pool[BHTreeNode.poolUsed++];
@@ -68,6 +109,7 @@ export class BHTreeNode {
         return this._parent == null;
     }
 
+    /** True if this node has no children (leaf or empty). */
     public isExternal(): boolean {
         return this.quadNode[0] == null &&
             this.quadNode[1] == null &&
@@ -75,6 +117,7 @@ export class BHTreeNode {
             this.quadNode[3] == null;
     }
 
+    /** True if force evaluation opened this node instead of approximating it. */
     public wasTooClose(): boolean {
         return this._bSubdivided;
     }
@@ -95,10 +138,12 @@ export class BHTreeNode {
         return BHTreeNode.s_theta;
     }
 
+    /** Sets the global opening angle (affects all nodes). */
     public setTheta(theta: number): void {
         BHTreeNode.s_theta = theta;
     }
 
+    /** Force-evaluation count from the last `statReset` + `calcForce` on particle 0. */
     public statGetNumCalc(): number {
         return BHTreeNode.s_nNumCalc;
     }
@@ -111,6 +156,11 @@ export class BHTreeNode {
         return this._num;
     }
 
+    /**
+     * Clears force statistics and `wasTooClose` flags.
+     * Called just before evaluating particle 0 so the tree overlay
+     * shows the approximation used for that body.
+     */
     public statReset(): void {
         if (!this.isRoot()) {
             throw new Error("Only the root node may reset statistics data.");
@@ -130,6 +180,10 @@ export class BHTreeNode {
         resetFlag(this);
     }
 
+    /**
+     * Empties the tree, returns children to the pool, and sets a new square ROI.
+     * Only valid on the root.
+     */
     public reset(min: Vec2, max: Vec2): void {
         if (!this.isRoot()) {
             throw new Error("Only the root node may reset the tree.");
@@ -154,6 +208,10 @@ export class BHTreeNode {
         BHTreeNode.s_renegades = [];
     }
 
+    /**
+     * Returns which child square contains (x, y).
+     * Throws if the point is outside this node (particle is skipped as out of ROI).
+     */
     public getQuadrant(x: number, y: number): EQuadrant {
         if (x <= this._center.x && y <= this._center.y) {
             return EQuadrant.SW;
@@ -180,6 +238,7 @@ export class BHTreeNode {
         }
     }
 
+    /** Allocates (from the pool) the child node for the given quadrant. */
     public createQuadNode(eQuad: EQuadrant): BHTreeNode {
         switch (eQuad) {
             case EQuadrant.SW:
@@ -201,6 +260,10 @@ export class BHTreeNode {
         }
     }
 
+    /**
+     * Bottom-up pass: leaf mass/CM copied from the particle; internal nodes
+     * sum children. Must run after all inserts and before `calcForce`.
+     */
     public computeMassDistribution(): void {
         if (this._num == 1) {
             this._mass = this._particle.mass;
@@ -227,6 +290,10 @@ export class BHTreeNode {
         }
     }
 
+    /**
+     * Newtonian acceleration of p1 due to p2, with Plummer-like softening:
+     * r = sqrt(dx^2 + dy^2 + s_soft). Writes into `acc`.
+     */
     private calcAcc(p1: ParticleData, p2: ParticleData, acc: Vec2): void {
         acc.x = 0;
         acc.y = 0;
@@ -253,6 +320,10 @@ export class BHTreeNode {
         }
     }
 
+    /**
+     * Acceleration on `p1` from the whole tree plus any renegade particles.
+     * Result is written to `acc`.
+     */
     public calcForce(p1: ParticleData, acc: Vec2): void {
         this.calcTreeForce(p1, acc);
 
@@ -269,6 +340,10 @@ export class BHTreeNode {
         }
     }
 
+    /**
+     * Recursive Barnes-Hut force: leaf = pairwise; far node = monopole;
+     * near node = sum of children. Opening test is `d/r <= theta`.
+     */
     private calcTreeForce(p1: ParticleData, acc: Vec2): void {
         if (this._num == 1) {
             this.calcAcc(p1, this._particle, acc);
@@ -304,6 +379,7 @@ export class BHTreeNode {
         }
     }
 
+    /** Debug dump of this subtree to the console (verbose mode). */
     public dumpNode(quad: number, level: number): void {
         let space = "";
         for (let i = 0; i < level; ++i) {
@@ -324,6 +400,14 @@ export class BHTreeNode {
         }
     }
 
+    /**
+     * Inserts a particle into this subtree.
+     * - Empty node: store as leaf.
+     * - Leaf: subdivide, move the old particle, then insert the new one.
+     * - Internal: recurse into the correct quadrant.
+     * Coincident positions go to `s_renegades` (direct-sum later).
+     * Out-of-bounds throws (caught by ModelNBody — particle is skipped).
+     */
     public insert(newParticle: ParticleData, level: number): void {
         const px = newParticle.x;
         const py = newParticle.y;

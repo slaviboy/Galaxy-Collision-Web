@@ -1,7 +1,12 @@
 import { CollisionRenderer } from './core/CollisionRenderer'
 import { UiController } from './ui/UiController'
 
+/**
+ * Webpack library export (`library: 'GalaxyCollision'`).
+ * After the bundle loads, `window.GalaxyCollision.collision` is the renderer.
+ */
 export var collision: CollisionRenderer | null = null
+/** HTML panel controller bound to `collision`. */
 export var uiController: UiController | null = null
 
 try {

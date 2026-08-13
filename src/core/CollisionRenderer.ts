@@ -8,6 +8,7 @@ import { IntegratorADB6 } from './IntegratorADB6'
 import { BHTreeNode } from './BHTree'
 import { Vec3 } from '../entities/Vec3'
 
+/** Bit flags for overlays and simulation control (same values as C++ NBodyWnd). */
 export enum DisplayState {
     NONE = 0,
     AXIS = 1 << 0,
@@ -23,8 +24,16 @@ export enum DisplayState {
     ROI = 1 << 10
 }
 
+/** How the Barnes-Hut tree is drawn: hidden, force-approximation cells, or every node. */
 export type TreeMode = 'off' | 'approx' | 'complete'
 
+/**
+ * Main application class: owns the n-body model, ADB6 integrator, WebGL
+ * buffers, camera, and the animation loop.
+ *
+ * Each frame: optionally `solver.singleStep()`, upload particle positions,
+ * rebuild overlay geometry (axis / tree / ROI), then draw.
+ */
 export class CollisionRenderer {
     private canvas: HTMLCanvasElement;
     private gl: WebGL2RenderingContext;
@@ -34,11 +43,13 @@ export class CollisionRenderer {
     private vertRoi: VertexBufferLines;
     private vertBodies: VertexBufferParticles;
 
+    /** Orthographic field of view (length of an axis in parsecs). C++ starts at 30. */
     private _fov: number = 30;
 
     private matProjection: mat4 = mat4.create();
     private matView: mat4 = mat4.create();
 
+    /** Camera at (0,0,2) looking at origin, matching SDLWindow defaults. */
     private camPos: vec3 = vec3.fromValues(0, 0, 2);
     private camLookAt: vec3 = vec3.fromValues(0, 0, 0);
     private camOrient: vec3 = vec3.fromValues(0, 1, 0);
@@ -54,8 +65,13 @@ export class CollisionRenderer {
 
     private statsEl: HTMLElement | null;
     private helpEl: HTMLElement | null;
+    /** Called after keyboard toggles so the HTML panel stays in sync. */
     private onFlagsChanged: (() => void) | null = null;
 
+    /**
+     * Creates WebGL resources, builds the collision IC, runs ADB6 RK4 warmup,
+     * and starts `requestAnimationFrame`.
+     */
     public constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
 
@@ -84,20 +100,24 @@ export class CollisionRenderer {
         window.requestAnimationFrame((timeStamp) => this.mainLoop(timeStamp));
     }
 
+    /** Lets UiController refresh checkboxes after keyboard shortcuts. */
     public setFlagsChangedCallback(cb: () => void): void {
         this.onFlagsChanged = cb;
     }
 
+    /** Invokes the UI sync callback if one is registered. */
     private notifyFlagsChanged(): void {
         if (this.onFlagsChanged) {
             this.onFlagsChanged();
         }
     }
 
+    /** Returns true if `flag` is set in the display bitmask. */
     private hasFlag(flag: DisplayState): boolean {
         return (this.flags & flag) != 0;
     }
 
+    /** Sets or clears a single display flag without touching the others. */
     private setFlag(flag: DisplayState, stat: boolean): void {
         if (stat)
             this.flags |= flag;
@@ -105,6 +125,7 @@ export class CollisionRenderer {
             this.flags &= ~flag;
     }
 
+    /** Pause skips `singleStep` but still redraws. */
     public get paused(): boolean {
         return this.hasFlag(DisplayState.PAUSE);
     }
@@ -186,6 +207,7 @@ export class CollisionRenderer {
         }
     }
 
+    /** Barnes-Hut opening angle; minimum 0.1. */
     public get theta(): number {
         return this.model.getTheta();
     }
@@ -194,6 +216,7 @@ export class CollisionRenderer {
         this.model.setTheta(Math.max(0.1, value));
     }
 
+    /** Orthographic field of view in parsecs. */
     public get fov(): number {
         return this._fov;
     }
@@ -203,17 +226,22 @@ export class CollisionRenderer {
         this.adjustCamera();
     }
 
+    /**
+     * Multiplies FOV by `scale` (0.9 = zoom in, 1.1 = zoom out, like C++ keypad +/-).
+     */
     public scaleFov(scale: number): void {
         this.fov = this._fov * scale;
         this.notifyFlagsChanged();
     }
 
+    /** Rebuilds particles and restarts ADB6 (includes RK4 warmup). */
     public reset(): void {
         this.model = new ModelNBody();
         this.solver = new IntegratorADB6(this.model, this.model.getSuggestedTimeStep());
         this.solver.setInitialState(this.model.getInitialState());
     }
 
+    /** Cycles tree overlay: off → approximation cells → complete tree → off. */
     public cycleTree(): void {
         if (!this.hasFlag(DisplayState.TREE)) {
             this.treeMode = 'approx';
@@ -230,6 +258,7 @@ export class CollisionRenderer {
         this.notifyFlagsChanged();
     }
 
+    /** Compiles shaders, allocates GPU buffers, and sets the viewport. */
     private initGL(): void {
         this.vertAxis.initialize();
         this.vertTree.initialize();
@@ -241,6 +270,7 @@ export class CollisionRenderer {
         this.adjustCamera();
     }
 
+    /** Matches the canvas backing store to the window and rebuilds the projection. */
     private onResize(): void {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
@@ -250,6 +280,10 @@ export class CollisionRenderer {
         this.adjustCamera();
     }
 
+    /**
+     * Orthographic projection of size `_fov`, aspect-corrected, plus lookAt.
+     * Matches C++ `glOrtho(-l,l,-l,l,-l,l)` with extra aspect for widescreen.
+     */
     private adjustCamera(): void {
         let l: number = this._fov / 2.0;
         let aspect: number = this.canvas.width / this.canvas.height;
@@ -267,10 +301,16 @@ export class CollisionRenderer {
             this.camOrient);
     }
 
+    /** Registers the keyboard shortcuts from NBodyWnd. */
     private bindInput(): void {
         window.addEventListener("keydown", (ev: KeyboardEvent) => this.onKeyDown(ev));
     }
 
+    /**
+     * Keyboard map (same letters as C++):
+     * a axis, b bodies, t tree, c COM, h help, s stats, r ROI, v verbose,
+     * y/x theta, +/- zoom, space pause.
+     */
     private onKeyDown(ev: KeyboardEvent): void {
         switch (ev.key) {
             case "a":
@@ -339,6 +379,7 @@ export class CollisionRenderer {
         this.notifyFlagsChanged();
     }
 
+    /** Tick marks and axes translated to the center of mass. */
     private updateAxis(origin: Vec3): void {
         let vert: VertexColor[] = [];
         let idx: number[] = [];
@@ -389,6 +430,7 @@ export class CollisionRenderer {
         this.vertAxis.createBuffer(vert, idx, this.gl.LINES);
     }
 
+    /** Appends one line segment (two vertices) to overlay geometry. */
     private addLine(vert: VertexColor[], idx: number[],
         x0: number, y0: number, x1: number, y1: number,
         r: number, g: number, b: number, a: number): void {
@@ -398,6 +440,7 @@ export class CollisionRenderer {
         vert.push(new VertexColor(x1, y1, 0, r, g, b, a));
     }
 
+    /** Red cross at COM plus the square ROI box of side `_roi`. */
     private updateRoi(cm: Vec3): void {
         let vert: VertexColor[] = [];
         let idx: number[] = [];
@@ -415,6 +458,7 @@ export class CollisionRenderer {
         this.vertRoi.createBuffer(vert, idx, this.gl.LINES);
     }
 
+    /** Walks the current Barnes-Hut tree into line geometry. */
     private updateTree(): void {
         let vert: VertexColor[] = [];
         let idx: number[] = [];
@@ -423,6 +467,11 @@ export class CollisionRenderer {
         this.vertTree.createBuffer(vert, idx, this.gl.LINES);
     }
 
+    /**
+     * Recursively emits cell rectangles. `complete` draws every node;
+     * otherwise only nodes that were not opened (`!wasTooClose`) are drawn —
+     * i.e. the cells actually used as monopoles for particle 0.
+     */
     private drawNode(
         pNode: BHTreeNode,
         level: number,
@@ -472,6 +521,7 @@ export class CollisionRenderer {
         }
     }
 
+    /** Shows or hides the HTML stats and help panels. */
     private updateOverlays(): void {
         if (this.helpEl) {
             this.helpEl.style.display = this.showHelp ? "block" : "none";
@@ -481,6 +531,7 @@ export class CollisionRenderer {
         }
     }
 
+    /** Fills the stats overlay with N, theta, FPS, time, camera, FOV, calc count. */
     private updateStats(): void {
         if (!this.showStat || !this.statsEl) {
             return;
@@ -500,6 +551,7 @@ export class CollisionRenderer {
             "Solver: " + this.solver.getID();
     }
 
+    /** Advances physics (unless paused) and rebuilds GPU overlay/particle data. */
     private update(): void {
         if (!this.hasFlag(DisplayState.PAUSE)) {
             this.solver.singleStep();
@@ -524,6 +576,7 @@ export class CollisionRenderer {
         this.updateOverlays();
     }
 
+    /** Clears to dark blue and draws axis, tree, particles, then ROI. */
     private render(): void {
         this.gl.clearColor(0.0, 0.0, 0.1, 1.0);
         this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
@@ -543,6 +596,7 @@ export class CollisionRenderer {
         }
     }
 
+    /** Animation-frame callback: FPS sample, update, render, then request the next frame. */
     public mainLoop(timestamp: number): void {
         let error = false;
         try {

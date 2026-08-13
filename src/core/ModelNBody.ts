@@ -5,7 +5,47 @@ import { Vec3 } from '../entities/Vec3'
 import { BHTreeNode } from './BHTree'
 import { ParticleData, STATE_STRIDE, setDeriv } from './Types'
 
+/**
+ * Two-dimensional n-body model for a galaxy collision.
+ *
+ * Owns the initial state, per-particle masses, and the Barnes-Hut root.
+ * `eval` rebuilds the tree from the current integrator state and writes
+ * accelerations into the derivative vector the ADB6 solver consumes.
+ *
+ * Units: parsec, solar mass, year. Gravity is `gamma_1`, Newton's G
+ * converted into those units.
+ */
 export class ModelNBody extends IModel {
+    /** Packed initial conditions [x, y, vx, vy] * N. */
+    private _pInitial: Float64Array | null = null;
+    /** Packed masses [mass] * N (constant during the run). */
+    private _pAux: Float64Array | null = null;
+    /** Barnes-Hut root; rebuilt every `eval`. */
+    private _root: BHTreeNode = new BHTreeNode(new Vec2(), new Vec2());
+    /** Bounding box of the initial distribution (square after padding). */
+    private _min: Vec2 = new Vec2();
+    private _max: Vec2 = new Vec2();
+    /** Tree is recentered on this point (starts at origin, then follows COM). */
+    private _center: Vec2 = new Vec2();
+    private _camDir: Vec3 = new Vec3();
+    /** Last center of mass, copied during `eval` for the renderer. */
+    private _camPos: Vec3 = new Vec3();
+    /** Half-size of the square region of interest around `_center`. */
+    private _roi: number = 1;
+    /** Suggested integrator step (100 years for the collision IC). */
+    private _timeStep: number = 1;
+    /**
+     * G in (pc^3 / Msun / year^2):
+     * Gamma / pc^3 * Msun * (seconds per year)^2
+     */
+    private static readonly gamma_1 =
+        Constants.Gamma / (Constants.ParsecInMeter * Constants.ParsecInMeter * Constants.ParsecInMeter)
+        * Constants.MassOfSun * (365.25 * 86400) * (365.25 * 86400);
+    /** Particle count (5000 for InitCollision). */
+    private _num: number = 0;
+    /** When true, `builtTree` dumps the quadtree to the console. */
+    private _bVerbose: boolean = false;
+
     constructor() {
         super("N-Body simulation (2D)");
         BHTreeNode.s_gamma = ModelNBody.gamma_1;
@@ -24,6 +64,7 @@ export class ModelNBody extends IModel {
         return this._roi;
     }
 
+    /** Center of mass of the current tree (after the last `eval`). */
     public getCenterOfMass(): Vec3 {
         const cm2d = this._root.getCenterOfMass();
         return new Vec3(cm2d.x, cm2d.y, 0);
@@ -41,6 +82,13 @@ export class ModelNBody extends IModel {
         return this._pInitial as Float64Array;
     }
 
+    /**
+     * Sets p2's velocity for a circular orbit around p1:
+     * v = sqrt(G m1 / dist), perpendicular to the separation vector.
+     *
+     * Note: `y1` is taken from `p1.x` to match the C++ source (harmless
+     * for the collision IC because both black holes have x == y).
+     */
     private getOrbitalVelocity(p1: ParticleData, p2: ParticleData): void {
         const x1 = p1.x;
         const y1 = p1.x;
@@ -58,6 +106,10 @@ export class ModelNBody extends IModel {
         p2.vy = (-r0 / dist) * v;
     }
 
+    /**
+     * Allocates state/aux arrays for `num` particles and sets the step size.
+     * Integrator dimension is `num * 4`.
+     */
     private resetDim(num: number, stepsize: number): void {
         this._num = num;
         this.setDim(this._num * STATE_STRIDE);
@@ -75,6 +127,13 @@ export class ModelNBody extends IModel {
         this._center.y = 0;
     }
 
+    /**
+     * Collision initial condition (matches C++ `InitCollision`):
+     * - i = 0: primary black hole at origin, mass 1e6
+     * - i = 1..3999: disk around BH1 (radius scale 10)
+     * - i = 4000: secondary black hole at (10, 10), mass 1e5, v *= 0.9
+     * - i = 4001..4999: disk around BH2 (radius scale 3), velocities added to BH2
+     */
     public initCollision(): void {
         this.resetDim(5000, 100);
 
@@ -151,6 +210,11 @@ export class ModelNBody extends IModel {
         console.log("  l  =" + l);
     }
 
+    /**
+     * Rebuilds the quadtree over the square ROI centered on `_center`.
+     * Particles outside the ROI throw and are omitted. After insert,
+     * mass distribution is computed and `_center` is set to the COM.
+     */
     private builtTree(state: Float64Array, aux: Float64Array): void {
         this._root.reset(
             new Vec2(this._center.x - this._roi, this._center.y - this._roi),
@@ -203,6 +267,11 @@ export class ModelNBody extends IModel {
         this._root.setTheta(theta);
     }
 
+    /**
+     * ODE right-hand side: rebuild tree, then for each particle write
+     * (vx, vy, ax, ay) into `a_deriv`. Particle 0 is evaluated last so
+     * tree statistics / `wasTooClose` flags describe that body.
+     */
     public eval(a_state: Float64Array, _a_time: number, a_deriv: Float64Array): void {
         const aux = this._pAux as Float64Array;
         this.builtTree(a_state, aux);
@@ -224,23 +293,8 @@ export class ModelNBody extends IModel {
         this._camPos.y = this._root.getCenterOfMass().y;
     }
 
+    /** Collision runs indefinitely. */
     public isFinished(_state: Float64Array): boolean {
         return false;
     }
-
-    private _pInitial: Float64Array | null = null;
-    private _pAux: Float64Array | null = null;
-    private _root: BHTreeNode = new BHTreeNode(new Vec2(), new Vec2());
-    private _min: Vec2 = new Vec2();
-    private _max: Vec2 = new Vec2();
-    private _center: Vec2 = new Vec2();
-    private _camDir: Vec3 = new Vec3();
-    private _camPos: Vec3 = new Vec3();
-    private _roi: number = 1;
-    private _timeStep: number = 1;
-    private static readonly gamma_1 =
-        Constants.Gamma / (Constants.ParsecInMeter * Constants.ParsecInMeter * Constants.ParsecInMeter)
-        * Constants.MassOfSun * (365.25 * 86400) * (365.25 * 86400);
-    private _num: number = 0;
-    private _bVerbose: boolean = false;
 }

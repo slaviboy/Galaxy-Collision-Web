@@ -2,12 +2,23 @@ import { VertexColor } from '../entities/VertexColor'
 import { VertexBufferBase } from './VertexBufferBase'
 import { AttributeDefinition } from '../core/AttributeDefinition'
 
+/**
+ * Draws colored lines (axis, Barnes-Hut cells, ROI box) using VertexColor
+ * vertices. Shader transforms by `projMat` only (view is identity in practice
+ * because lookAt is baked into the same pipeline as the C++ gluLookAt setup).
+ */
 export class VertexBufferLines extends VertexBufferBase<VertexColor>
 {
+	/** Requested GL line width (often clamped to 1 on WebGL). */
 	private lineWidth: number = 1;
 	private readonly attPosition: number = 0;
 	private readonly attColor: number = 1;
 
+	/**
+	 * @param gl WebGL2 context.
+	 * @param lineWidth Passed to `gl.lineWidth` before draw.
+	 * @param bufferMode STATIC_DRAW or DYNAMIC_DRAW.
+	 */
 	constructor(gl: WebGL2RenderingContext, lineWidth: number, bufferMode: number) {
 		super(gl, bufferMode);
 		this.lineWidth = lineWidth;

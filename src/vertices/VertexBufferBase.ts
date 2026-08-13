@@ -2,24 +2,45 @@ import { mat4 } from 'gl-matrix'
 import { VertexBase } from '../entities/VertexBase'
 import { AttributeDefinition } from '../core/AttributeDefinition'
 
+/**
+ * Generic WebGL2 geometry helper: owns a VAO, VBO, IBO, and a shader program.
+ * Subclasses supply shaders and optional draw-time uniforms.
+ *
+ * Vertices are interleaved according to `defineAttributes`. Drawing uses
+ * `drawElements` with the current primitive type (LINES, POINTS, ...).
+ */
 export abstract class VertexBufferBase<TVertex extends VertexBase>
 {
+	/** Vertex buffer object (ARRAY_BUFFER). */
 	protected vbo: WebGLBuffer | null = null;
+	/** Index buffer object (ELEMENT_ARRAY_BUFFER). */
 	protected ibo: WebGLBuffer | null = null;
+	/** Vertex array object that captures attribute + index bindings. */
 	protected vao: WebGLVertexArrayObject | null = null;
 
 	protected vert: TVertex[] = [];
 	protected idx: number[] = [];
+	/** Number of indices passed to `drawElements`. */
 	protected elementCount: number = 0;
 
 	protected shaderProgram?: WebGLProgram | null = null;
 	private _primitiveType: number = 0;
 
+	/** gl.STATIC_DRAW or gl.DYNAMIC_DRAW. */
 	protected bufferMode: number = 0;
 	protected readonly gl: WebGL2RenderingContext;
 
 	private attributes: AttributeDefinition[] = [];
 
+	/** Blend-function source factor (default SRC_ALPHA). */
+	protected blendSrc: number;
+	/** Blend-function dest factor (default ONE = additive). */
+	protected blendDst: number;
+
+	/**
+	 * @param gl WebGL2 context from the canvas.
+	 * @param bufferMode Usage hint for `bufferData`.
+	 */
 	public constructor(gl: WebGL2RenderingContext, bufferMode: number) {
 		this.gl = gl;
 		this.bufferMode = bufferMode;
@@ -27,6 +48,7 @@ export abstract class VertexBufferBase<TVertex extends VertexBase>
 		this.blendDst = gl.ONE;
 	}
 
+	/** Records the interleaved attribute layout used by `vertexAttribPointer`. */
 	protected defineAttributes(attribList: AttributeDefinition[]): void {
 		this.attributes = [];
 
@@ -58,6 +80,9 @@ export abstract class VertexBufferBase<TVertex extends VertexBase>
 
 	protected abstract getFragmentShaderSource(): string;
 
+	/**
+	 * Compiles a vertex or fragment shader and throws with the info log on failure.
+	 */
 	private createShader(shaderType: number, shaderSource: string): WebGLShader {
 		let shader: WebGLShader = this.gl.createShader(shaderType) as WebGLShader;
 		this.gl.shaderSource(shader, shaderSource);
@@ -79,6 +104,10 @@ export abstract class VertexBufferBase<TVertex extends VertexBase>
 		return shader;
 	}
 
+	/**
+	 * Creates GPU buffers and links the shader program.
+	 * Must be called once before `createBuffer` / `draw`.
+	 */
 	public initialize(): void {
 		this.vbo = this.gl.createBuffer();
 		this.ibo = this.gl.createBuffer();
@@ -113,6 +142,7 @@ export abstract class VertexBufferBase<TVertex extends VertexBase>
 		this.gl.detachShader(this.shaderProgram, fragmentShader);
 	}
 
+	/** Disables all vertex attribute arrays owned by this buffer. */
 	protected releaseAttribArray(): void {
 		for (let i = 0; i < this.attributes.length; ++i) {
 			let attribIdx = this.attributes[i].attribIdx;
@@ -120,6 +150,7 @@ export abstract class VertexBufferBase<TVertex extends VertexBase>
 		}
 	}
 
+	/** Frees VAO/VBO/IBO. The shader program is left for GC / context teardown. */
 	public release(): void {
 		this.releaseAttribArray();
 
@@ -137,19 +168,22 @@ export abstract class VertexBufferBase<TVertex extends VertexBase>
 			this.gl.deleteVertexArray(this.vao);
 	}
 
+	/** Hook for subclass uniforms (point size, time, ...). */
 	protected onSetCustomShaderVariables(): void {
 	}
 
+	/** Hook called after blend is enabled, before `drawElements` (e.g. lineWidth). */
 	protected onBeforeDraw(): void {
 	}
-
-	protected blendSrc: number;
-	protected blendDst: number;
 
 	public get hasGeometry(): boolean {
 		return this.elementCount > 0;
 	}
 
+	/**
+	 * Binds the program, uploads view/projection, and draws indexed geometry.
+	 * No-op when the buffer is empty.
+	 */
 	public draw(matView: mat4, matProjection: mat4): void {
 		if (this.shaderProgram == null) {
 			throw new Error("VertexBufferBase.draw(): shader program is null!");
@@ -183,6 +217,10 @@ export abstract class VertexBufferBase<TVertex extends VertexBase>
 		this.gl.useProgram(null);
 	}
 
+	/**
+	 * Packs `vert` into a Float32Array, uploads VBO + IBO, and configures attributes.
+	 * Empty arrays clear the geometry instead of throwing (overlays can be optional).
+	 */
 	public createBuffer(vert: TVertex[], idx: number[], type: number): void {
 		if (vert.length == 0) {
 			this.elementCount = 0;
@@ -233,6 +271,9 @@ export abstract class VertexBufferBase<TVertex extends VertexBase>
 		this.gl.bindVertexArray(null);
 	}
 
+	/**
+	 * Fast path for per-frame uploads (particles): caller already packed floats.
+	 */
 	public uploadDynamic(floatArray: Float32Array, indices: Uint32Array, floatsPerVertex: number, type: number): void {
 		if (floatArray.length == 0 || indices.length == 0) {
 			this.elementCount = 0;
