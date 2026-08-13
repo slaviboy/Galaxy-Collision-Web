@@ -86,8 +86,28 @@ export class UiController {
             this.el("labelGalaxy2Stars").innerHTML = String(this.renderer.galaxy2Stars)
         }
 
+        this.bindCoordSlider("slGalaxy1X", "labelGalaxy1X", (v) => { this.renderer.galaxy1X = v })
+        this.bindCoordSlider("slGalaxy1Y", "labelGalaxy1Y", (v) => { this.renderer.galaxy1Y = v })
+        this.bindCoordSlider("slGalaxy2X", "labelGalaxy2X", (v) => { this.renderer.galaxy2X = v })
+        this.bindCoordSlider("slGalaxy2Y", "labelGalaxy2Y", (v) => { this.renderer.galaxy2Y = v })
+
         this.el<HTMLButtonElement>("btnReset").onclick = () => {
             this.renderer.reset()
+        }
+    }
+
+    /**
+     * Coordinate sliders update the label while dragging and rebuild
+     * the collision IC when the pointer is released.
+     */
+    private bindCoordSlider(id: string, labelId: string, apply: (value: number) => void): void {
+        const sl = this.el<HTMLInputElement>(id)
+        sl.oninput = () => {
+            this.el(labelId).innerHTML = sl.value
+        }
+        sl.onchange = () => {
+            apply(parseFloat(sl.value))
+            this.el(labelId).innerHTML = sl.value
         }
     }
 
@@ -117,5 +137,21 @@ export class UiController {
         const slG2 = this.el<HTMLInputElement>("slGalaxy2Stars")
         slG2.value = String(this.renderer.galaxy2Stars)
         this.el("labelGalaxy2Stars").innerHTML = slG2.value
+
+        const slG1X = this.el<HTMLInputElement>("slGalaxy1X")
+        slG1X.value = String(this.renderer.galaxy1X)
+        this.el("labelGalaxy1X").innerHTML = slG1X.value
+
+        const slG1Y = this.el<HTMLInputElement>("slGalaxy1Y")
+        slG1Y.value = String(this.renderer.galaxy1Y)
+        this.el("labelGalaxy1Y").innerHTML = slG1Y.value
+
+        const slG2X = this.el<HTMLInputElement>("slGalaxy2X")
+        slG2X.value = String(this.renderer.galaxy2X)
+        this.el("labelGalaxy2X").innerHTML = slG2X.value
+
+        const slG2Y = this.el<HTMLInputElement>("slGalaxy2Y")
+        slG2Y.value = String(this.renderer.galaxy2Y)
+        this.el("labelGalaxy2Y").innerHTML = slG2Y.value
     }
 }

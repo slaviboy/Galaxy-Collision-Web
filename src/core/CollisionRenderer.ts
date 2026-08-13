@@ -62,6 +62,10 @@ export class CollisionRenderer {
 
     private _galaxy1Stars: number = ModelNBody.GALAXY1_STARS_DEFAULT;
     private _galaxy2Stars: number = ModelNBody.GALAXY2_STARS_DEFAULT;
+    private _galaxy1X: number = ModelNBody.GALAXY1_X_DEFAULT;
+    private _galaxy1Y: number = ModelNBody.GALAXY1_Y_DEFAULT;
+    private _galaxy2X: number = ModelNBody.GALAXY2_X_DEFAULT;
+    private _galaxy2Y: number = ModelNBody.GALAXY2_Y_DEFAULT;
 
     private model: ModelNBody;
     private solver: IntegratorADB6;
@@ -95,7 +99,10 @@ export class CollisionRenderer {
         this.statsEl = document.getElementById("statsOverlay");
         this.helpEl = document.getElementById("helpOverlay");
 
-        this.model = new ModelNBody(this._galaxy1Stars, this._galaxy2Stars);
+        this.model = new ModelNBody(
+            this._galaxy1Stars, this._galaxy2Stars,
+            this._galaxy1X, this._galaxy1Y,
+            this._galaxy2X, this._galaxy2Y);
         this.solver = new IntegratorADB6(this.model, this.model.getSuggestedTimeStep());
         this.solver.setInitialState(this.model.getInitialState());
 
@@ -249,6 +256,51 @@ export class CollisionRenderer {
         this.reset();
     }
 
+    public get galaxy1X(): number {
+        return this._galaxy1X;
+    }
+
+    public set galaxy1X(value: number) {
+        this.setGalaxyCoord('_galaxy1X', value);
+    }
+
+    public get galaxy1Y(): number {
+        return this._galaxy1Y;
+    }
+
+    public set galaxy1Y(value: number) {
+        this.setGalaxyCoord('_galaxy1Y', value);
+    }
+
+    public get galaxy2X(): number {
+        return this._galaxy2X;
+    }
+
+    public set galaxy2X(value: number) {
+        this.setGalaxyCoord('_galaxy2X', value);
+    }
+
+    public get galaxy2Y(): number {
+        return this._galaxy2Y;
+    }
+
+    public set galaxy2Y(value: number) {
+        this.setGalaxyCoord('_galaxy2Y', value);
+    }
+
+    private setGalaxyCoord(field: '_galaxy1X' | '_galaxy1Y' | '_galaxy2X' | '_galaxy2Y', value: number): void {
+        const n = this.clampCoord(value);
+        if (n === this[field]) {
+            return;
+        }
+        this[field] = n;
+        this.reset();
+    }
+
+    private clampCoord(value: number): number {
+        return Math.min(ModelNBody.POSITION_MAX, Math.max(ModelNBody.POSITION_MIN, value));
+    }
+
     /**
      * Slider range for a galaxy: default/10 .. explicit max.
      */
@@ -284,7 +336,10 @@ export class CollisionRenderer {
 
     /** Rebuilds particles and restarts ADB6 (includes RK4 warmup). */
     public reset(): void {
-        this.model = new ModelNBody(this._galaxy1Stars, this._galaxy2Stars);
+        this.model = new ModelNBody(
+            this._galaxy1Stars, this._galaxy2Stars,
+            this._galaxy1X, this._galaxy1Y,
+            this._galaxy2X, this._galaxy2Y);
         this.solver = new IntegratorADB6(this.model, this.model.getSuggestedTimeStep());
         this.solver.setInitialState(this.model.getInitialState());
     }

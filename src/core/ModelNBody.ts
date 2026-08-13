@@ -47,6 +47,12 @@ export class ModelNBody extends IModel {
     private _numStars1: number = ModelNBody.GALAXY1_STARS_DEFAULT;
     /** Disk particles around the secondary black hole (C++ default 999). */
     private _numStars2: number = ModelNBody.GALAXY2_STARS_DEFAULT;
+    /** Initial center of galaxy 1 (primary black hole), parsecs. */
+    private _cx1: number = ModelNBody.GALAXY1_X_DEFAULT;
+    private _cy1: number = ModelNBody.GALAXY1_Y_DEFAULT;
+    /** Initial center of galaxy 2 (secondary black hole), parsecs. */
+    private _cx2: number = ModelNBody.GALAXY2_X_DEFAULT;
+    private _cy2: number = ModelNBody.GALAXY2_Y_DEFAULT;
     /** When true, `builtTree` dumps the quadtree to the console. */
     private _bVerbose: boolean = false;
 
@@ -56,17 +62,35 @@ export class ModelNBody extends IModel {
     /** C++ InitCollision: particles 4001..4999 around BH2. */
     public static readonly GALAXY2_STARS_DEFAULT = 999;
     public static readonly GALAXY2_STARS_MAX = 10000;
+    public static readonly GALAXY1_X_DEFAULT = 0;
+    public static readonly GALAXY1_Y_DEFAULT = 0;
+    public static readonly GALAXY2_X_DEFAULT = 10;
+    public static readonly GALAXY2_Y_DEFAULT = 10;
+    public static readonly POSITION_MIN = -50;
+    public static readonly POSITION_MAX = 50;
 
     /**
      * @param numStars1 Disk stars in galaxy 1 (excluding the central black hole).
      * @param numStars2 Disk stars in galaxy 2 (excluding the central black hole).
+     * @param cx1 Galaxy 1 center x (parsecs).
+     * @param cy1 Galaxy 1 center y (parsecs).
+     * @param cx2 Galaxy 2 center x (parsecs).
+     * @param cy2 Galaxy 2 center y (parsecs).
      */
     constructor(
         numStars1: number = ModelNBody.GALAXY1_STARS_DEFAULT,
-        numStars2: number = ModelNBody.GALAXY2_STARS_DEFAULT) {
+        numStars2: number = ModelNBody.GALAXY2_STARS_DEFAULT,
+        cx1: number = ModelNBody.GALAXY1_X_DEFAULT,
+        cy1: number = ModelNBody.GALAXY1_Y_DEFAULT,
+        cx2: number = ModelNBody.GALAXY2_X_DEFAULT,
+        cy2: number = ModelNBody.GALAXY2_Y_DEFAULT) {
         super("N-Body simulation (2D)");
         this._numStars1 = Math.max(1, Math.floor(numStars1));
         this._numStars2 = Math.max(1, Math.floor(numStars2));
+        this._cx1 = cx1;
+        this._cy1 = cy1;
+        this._cx2 = cx2;
+        this._cy2 = cy2;
         BHTreeNode.s_gamma = ModelNBody.gamma_1;
         this.initCollision();
     }
@@ -113,12 +137,12 @@ export class ModelNBody extends IModel {
      * Sets p2's velocity for a circular orbit around p1:
      * v = sqrt(G m1 / dist), perpendicular to the separation vector.
      *
-     * Note: `y1` is taken from `p1.x` to match the C++ source (harmless
-     * for the collision IC because both black holes have x == y).
+     * The C++ source copied `p1.x` into y1 (harmless when both black holes
+     * sat on x == y). With movable galaxy centers we use the real y.
      */
     private getOrbitalVelocity(p1: ParticleData, p2: ParticleData): void {
         const x1 = p1.x;
-        const y1 = p1.x;
+        const y1 = p1.y;
         const m1 = p1.mass;
         const x2 = p2.x;
         const y2 = p2.y;
@@ -127,8 +151,13 @@ export class ModelNBody extends IModel {
         const r1 = y1 - y2;
 
         const dist = Math.sqrt(r0 * r0 + r1 * r1);
-        const v = Math.sqrt(ModelNBody.gamma_1 * m1 / dist);
+        if (dist <= 0) {
+            p2.vx = 0;
+            p2.vy = 0;
+            return;
+        }
 
+        const v = Math.sqrt(ModelNBody.gamma_1 * m1 / dist);
         p2.vx = (r1 / dist) * v;
         p2.vy = (-r0 / dist) * v;
     }
@@ -155,10 +184,11 @@ export class ModelNBody extends IModel {
     }
 
     /**
-     * Collision initial condition (matches C++ `InitCollision` layout):
-     * - i = 0: primary black hole at origin, mass 1e6
+     * Collision initial condition (matches C++ `InitCollision` layout,
+     * with configurable galaxy centers):
+     * - i = 0: primary black hole at (cx1, cy1), mass 1e6
      * - i = 1 .. numStars1: disk around BH1 (radius scale 10)
-     * - i = numStars1 + 1: secondary black hole at (10, 10), mass 1e5, v *= 0.9
+     * - i = numStars1 + 1: secondary black hole at (cx2, cy2), mass 1e5, v *= 0.9
      * - remaining: disk around BH2 (radius scale 3), velocities added to BH2
      */
     public initCollision(): void {
@@ -175,8 +205,8 @@ export class ModelNBody extends IModel {
 
             if (i == 0) {
                 blackHole.copyFrom(st);
-                st.x = 0;
-                st.y = 0;
+                st.x = this._cx1;
+                st.y = this._cy1;
                 st.vx = 0;
                 st.vy = 0;
                 st.mass = 1000000;
@@ -186,14 +216,14 @@ export class ModelNBody extends IModel {
                 const r = 0.1 + .8 * (rad * Math.random());
                 const a = 2.0 * Math.PI * Math.random();
                 st.mass = 0.03 + 20 * Math.random();
-                st.x = r * Math.sin(a);
-                st.y = r * Math.cos(a);
+                st.x = this._cx1 + r * Math.sin(a);
+                st.y = this._cy1 + r * Math.cos(a);
                 this.getOrbitalVelocity(blackHole, st);
             }
             else if (i == bh2Index) {
                 blackHole2.copyFrom(st);
-                st.x = 10;
-                st.y = 10;
+                st.x = this._cx2;
+                st.y = this._cy2;
                 st.mass = 100000;
                 this.getOrbitalVelocity(blackHole, blackHole2);
                 blackHole2.vx *= 0.9;
@@ -227,6 +257,8 @@ export class ModelNBody extends IModel {
         this._max.x = c.x + l / 2.0;
         this._min.y = c.y - l / 2.0;
         this._max.y = c.y + l / 2.0;
+        this._center.x = c.x;
+        this._center.y = c.y;
 
         console.log("Initial particle distribution area");
         console.log("----------------------------------");

@@ -55,7 +55,7 @@ index i:  vx, vy, ax, ay     (dx/dt, dy/dt, dvx/dt, dvy/dt)
 | N1 + 1 | Secondary black hole at `(10, 10)`, mass `1e5`, orbital speed × 0.9 |
 | rest | Disk around BH2, radius scale 3, velocities added to BH2 |
 
-Defaults: N1 = 3999, N2 = 999 (5000 bodies total). Sliders allow N1 from 399–25000 and N2 from 99–10000. Changing either rebuilds the simulation.
+Defaults: N1 = 3999 at `(0, 0)`, N2 = 999 at `(10, 10)` (5000 bodies total). Sliders allow N1 from 399–25000, N2 from 99–10000, and each galaxy center from −50 to 50 pc. Changing stars or position rebuilds the simulation.
 
 Timestep is 100 years. The second black hole’s slightly sub-circular velocity makes the galaxies collide rather than orbit forever.
 
