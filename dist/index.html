@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8" />
+	<title>Galaxy Collision (Barnes-Hut)</title>
+	<link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+	<canvas id="cvCollision"></canvas>
+
+	<div id="statsOverlay"></div>
+	<div id="helpOverlay">Keyboard commands
+a     - display axis
+t     - display Barnes Hut tree
+s     - display statistic data
+c     - display center of mass
+b     - display particles
+h     - display help text
+r     - display region of interest
+y/x   - increase/decrease theta
++/-   - zoom
+space - halt simulation</div>
+
+	<div class="container">
+		<div class="left">
+			<div class="row" style="text-align: left;">
+				<div class="column-30 controls">
+					<form>
+						<fieldset>
+							<h3>Simulation</h3>
+							<div class="checkbox">
+								<input type="checkbox" id="cbPause" />
+								<label for="cbPause">pause</label>
+							</div>
+							<div class="slider">
+								<label for="slTheta">Barnes-Hut theta</label><br />
+								<input type="range" min="0.1" max="2" step="0.1" value="0.9" id="slTheta">
+								<span id="labelTheta"></span>
+							</div>
+							<div class="slider">
+								<label for="slFov">Field of view</label><br />
+								<input type="range" min="2" max="80" step="0.5" value="30" id="slFov">
+								<span id="labelFov"></span>
+							</div>
+							<button type="button" id="btnReset">Reset collision</button>
+						</fieldset>
+
+						<fieldset>
+							<h3>Display</h3>
+							<div class="checkbox">
+								<input type="checkbox" id="cbShowBodies" checked />
+								<label for="cbShowBodies">bodies</label>
+							</div>
+							<div class="checkbox">
+								<input type="checkbox" id="cbShowAxis" checked />
+								<label for="cbShowAxis">axis</label>
+							</div>
+							<div class="checkbox">
+								<input type="checkbox" id="cbShowStat" checked />
+								<label for="cbShowStat">statistics</label>
+							</div>
+							<div class="checkbox">
+								<input type="checkbox" id="cbShowCom" />
+								<label for="cbShowCom">center of mass</label>
+							</div>
+							<div class="checkbox">
+								<input type="checkbox" id="cbShowRoi" />
+								<label for="cbShowRoi">region of interest</label>
+							</div>
+							<div class="checkbox">
+								<input type="checkbox" id="cbShowHelp" />
+								<label for="cbShowHelp">help</label>
+							</div>
+							<div class="slider">
+								<label for="cbTreeMode">Barnes-Hut tree</label><br />
+								<select id="cbTreeMode">
+									<option value="off" selected>off</option>
+									<option value="approx">cells used in force calculation</option>
+									<option value="complete">complete tree</option>
+								</select>
+							</div>
+						</fieldset>
+					</form>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<script src="./js/galaxy-collision.js"></script>
+</body>
+
+</html>

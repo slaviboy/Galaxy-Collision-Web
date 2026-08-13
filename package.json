@@ -1,0 +1,22 @@
+{
+  "name": "galaxy-collision",
+  "version": "1.0.0",
+  "description": "Barnes-Hut galaxy collision simulator (WebGL2 / TypeScript)",
+  "main": "./src/index.ts",
+  "scripts": {
+    "build": "webpack --mode development",
+    "prod": "webpack --mode production"
+  },
+  "keywords": ["galaxy", "collision", "barnes-hut", "n-body", "simulation"],
+  "author": "None",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.2.2",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4",
+    "ts-loader": "^9.5.0"
+  },
+  "dependencies": {
+    "gl-matrix": "^3.3.0"
+  }
+}

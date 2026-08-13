@@ -1,0 +1,102 @@
+.container {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    height: 100vh;
+    position: relative;
+    overflow: auto;
+}
+
+.container::-webkit-scrollbar {
+    display: none;
+}
+
+canvas {
+    position: absolute;
+    background-color: #00001a;
+}
+
+fieldset {
+    border: 1;
+    border-radius: 10px;
+    margin: 15px;
+    background-color: #2209091e;
+}
+
+h3 {
+    margin-top: 5px;
+    margin-bottom: 5px;
+    font-family: sans-serif;
+    color: #EEEEEE;
+}
+
+body {
+    background-color: #00001a;
+    color: #BBBBCC;
+    font-family: sans-serif;
+    font-size: 12pt;
+    font-weight: 100;
+    overflow: hidden;
+    margin: 0;
+}
+
+.row {
+    display: flex;
+}
+
+.column-30 {
+    flex: 30%;
+    min-width: 380px;
+}
+
+div.slider {
+    margin-top: 10px;
+}
+
+div.checkbox {
+    margin-top: 10px;
+}
+
+input[type=range] {
+    width: 240px;
+}
+
+.left {
+    margin: 0;
+    position: absolute;
+    top: 0%;
+    left: 0%;
+}
+
+#statsOverlay,
+#helpOverlay {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    font-family: monospace;
+    font-size: 13px;
+    color: #ffffff;
+    text-shadow: 0 0 4px #000000;
+    pointer-events: none;
+    white-space: pre;
+    line-height: 1.45;
+}
+
+#helpOverlay {
+    top: auto;
+    bottom: 16px;
+    display: none;
+}
+
+button {
+    margin-top: 10px;
+    padding: 6px 14px;
+    background: #2a2a44;
+    color: #EEEEEE;
+    border: 1px solid #555577;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #3a3a5a;
+}

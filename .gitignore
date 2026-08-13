@@ -1,0 +1,5 @@
+debug.log
+node_modules/*
+dist/js/galaxy-collision.js
+dist/js/galaxy-collision.js.map
+c
