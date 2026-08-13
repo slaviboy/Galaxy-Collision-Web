@@ -68,6 +68,24 @@ export class UiController {
             this.el("labelFov").innerHTML = slFov.value
         }
 
+        const slG1 = this.el<HTMLInputElement>("slGalaxy1Stars")
+        slG1.oninput = () => {
+            this.el("labelGalaxy1Stars").innerHTML = slG1.value
+        }
+        slG1.onchange = () => {
+            this.renderer.galaxy1Stars = parseInt(slG1.value, 10)
+            this.el("labelGalaxy1Stars").innerHTML = String(this.renderer.galaxy1Stars)
+        }
+
+        const slG2 = this.el<HTMLInputElement>("slGalaxy2Stars")
+        slG2.oninput = () => {
+            this.el("labelGalaxy2Stars").innerHTML = slG2.value
+        }
+        slG2.onchange = () => {
+            this.renderer.galaxy2Stars = parseInt(slG2.value, 10)
+            this.el("labelGalaxy2Stars").innerHTML = String(this.renderer.galaxy2Stars)
+        }
+
         this.el<HTMLButtonElement>("btnReset").onclick = () => {
             this.renderer.reset()
         }
@@ -91,5 +109,13 @@ export class UiController {
         const slFov = this.el<HTMLInputElement>("slFov")
         slFov.value = String(this.renderer.fov)
         this.el("labelFov").innerHTML = slFov.value
+
+        const slG1 = this.el<HTMLInputElement>("slGalaxy1Stars")
+        slG1.value = String(this.renderer.galaxy1Stars)
+        this.el("labelGalaxy1Stars").innerHTML = slG1.value
+
+        const slG2 = this.el<HTMLInputElement>("slGalaxy2Stars")
+        slG2.value = String(this.renderer.galaxy2Stars)
+        this.el("labelGalaxy2Stars").innerHTML = slG2.value
     }
 }

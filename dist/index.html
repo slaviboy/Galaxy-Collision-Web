@@ -36,9 +36,19 @@ space - halt simulation</div>
 								<label for="cbPause">pause</label>
 							</div>
 							<div class="slider">
-								<label for="slTheta">Barnes-Hut theta</label><br />
-								<input type="range" min="0.1" max="2" step="0.1" value="0.9" id="slTheta">
+								<label for="slTheta">Barnes-Hut theta (higher = faster, less accurate)</label><br />
+								<input type="range" min="0.1" max="20" step="0.1" value="0.9" id="slTheta">
 								<span id="labelTheta"></span>
+							</div>
+							<div class="slider">
+								<label for="slGalaxy1Stars">Galaxy 1 stars</label><br />
+								<input type="range" min="399" max="25000" step="1" value="3999" id="slGalaxy1Stars">
+								<span id="labelGalaxy1Stars"></span>
+							</div>
+							<div class="slider">
+								<label for="slGalaxy2Stars">Galaxy 2 stars</label><br />
+								<input type="range" min="99" max="10000" step="1" value="999" id="slGalaxy2Stars">
+								<span id="labelGalaxy2Stars"></span>
 							</div>
 							<div class="slider">
 								<label for="slFov">Field of view</label><br />

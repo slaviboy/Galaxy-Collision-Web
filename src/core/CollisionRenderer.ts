@@ -56,6 +56,13 @@ export class CollisionRenderer {
 
     private flags: DisplayState = DisplayState.BODIES | DisplayState.AXIS | DisplayState.STAT | DisplayState.VERBOSE;
 
+    /** Opening-angle slider range. Higher theta ≈ fewer force terms ≈ faster, less accurate. */
+    public static readonly THETA_MIN = 0.1;
+    public static readonly THETA_MAX = 20;
+
+    private _galaxy1Stars: number = ModelNBody.GALAXY1_STARS_DEFAULT;
+    private _galaxy2Stars: number = ModelNBody.GALAXY2_STARS_DEFAULT;
+
     private model: ModelNBody;
     private solver: IntegratorADB6;
 
@@ -88,7 +95,7 @@ export class CollisionRenderer {
         this.statsEl = document.getElementById("statsOverlay");
         this.helpEl = document.getElementById("helpOverlay");
 
-        this.model = new ModelNBody();
+        this.model = new ModelNBody(this._galaxy1Stars, this._galaxy2Stars);
         this.solver = new IntegratorADB6(this.model, this.model.getSuggestedTimeStep());
         this.solver.setInitialState(this.model.getInitialState());
 
@@ -207,13 +214,54 @@ export class CollisionRenderer {
         }
     }
 
-    /** Barnes-Hut opening angle; minimum 0.1. */
+    /** Barnes-Hut opening angle; higher is faster and less accurate. */
     public get theta(): number {
         return this.model.getTheta();
     }
 
     public set theta(value: number) {
-        this.model.setTheta(Math.max(0.1, value));
+        this.model.setTheta(Math.min(CollisionRenderer.THETA_MAX, Math.max(CollisionRenderer.THETA_MIN, value)));
+    }
+
+    public get galaxy1Stars(): number {
+        return this._galaxy1Stars;
+    }
+
+    public set galaxy1Stars(value: number) {
+        const n = this.clampStarCount(value, ModelNBody.GALAXY1_STARS_DEFAULT, ModelNBody.GALAXY1_STARS_MAX);
+        if (n === this._galaxy1Stars) {
+            return;
+        }
+        this._galaxy1Stars = n;
+        this.reset();
+    }
+
+    public get galaxy2Stars(): number {
+        return this._galaxy2Stars;
+    }
+
+    public set galaxy2Stars(value: number) {
+        const n = this.clampStarCount(value, ModelNBody.GALAXY2_STARS_DEFAULT, ModelNBody.GALAXY2_STARS_MAX);
+        if (n === this._galaxy2Stars) {
+            return;
+        }
+        this._galaxy2Stars = n;
+        this.reset();
+    }
+
+    /**
+     * Slider range for a galaxy: default/10 .. explicit max.
+     */
+    public static starCountBounds(defaultCount: number, maxCount: number): { min: number, max: number } {
+        return {
+            min: Math.max(1, Math.floor(defaultCount / 10)),
+            max: maxCount
+        };
+    }
+
+    private clampStarCount(value: number, defaultCount: number, maxCount: number): number {
+        const bounds = CollisionRenderer.starCountBounds(defaultCount, maxCount);
+        return Math.min(bounds.max, Math.max(bounds.min, Math.floor(value)));
     }
 
     /** Orthographic field of view in parsecs. */
@@ -236,7 +284,7 @@ export class CollisionRenderer {
 
     /** Rebuilds particles and restarts ADB6 (includes RK4 warmup). */
     public reset(): void {
-        this.model = new ModelNBody();
+        this.model = new ModelNBody(this._galaxy1Stars, this._galaxy2Stars);
         this.solver = new IntegratorADB6(this.model, this.model.getSuggestedTimeStep());
         this.solver.setInitialState(this.model.getInitialState());
     }
@@ -349,7 +397,7 @@ export class CollisionRenderer {
                 this.theta = this.theta + 0.1;
                 break;
             case "x":
-                this.theta = Math.max(this.theta - 0.1, 0.1);
+                this.theta = this.theta - 0.1;
                 break;
             case "+":
             case "=":

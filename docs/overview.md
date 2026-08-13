@@ -51,9 +51,11 @@ index i:  vx, vy, ax, ay     (dx/dt, dy/dt, dvx/dt, dvy/dt)
 | Index | Role |
 |---|---|
 | 0 | Primary black hole at origin, mass `1e6` |
-| 1–3999 | Disk around BH1, radius scale 10, circular orbits |
-| 4000 | Secondary black hole at `(10, 10)`, mass `1e5`, orbital speed × 0.9 |
-| 4001–4999 | Disk around BH2, radius scale 3, velocities added to BH2 |
+| 1 … N1 | Disk around BH1, radius scale 10, circular orbits |
+| N1 + 1 | Secondary black hole at `(10, 10)`, mass `1e5`, orbital speed × 0.9 |
+| rest | Disk around BH2, radius scale 3, velocities added to BH2 |
+
+Defaults: N1 = 3999, N2 = 999 (5000 bodies total). Sliders allow N1 from 399–25000 and N2 from 99–10000. Changing either rebuilds the simulation.
 
 Timestep is 100 years. The second black hole’s slightly sub-circular velocity makes the galaxies collide rather than orbit forever.
 
@@ -64,7 +66,7 @@ For a node of width `d` whose center of mass is distance `r` from the target par
 - if `d / r <= theta` → treat the node as a single mass (monopole)
 - else → open the node and visit children
 
-Default `theta = 0.9`. Smaller theta is more accurate and slower. Softening `s_soft = 0.01` (≈ 0.1 pc) is added inside the distance square root so close encounters do not blow up.
+Default `theta = 0.9`. **Higher theta is faster** (more cells approximated, fewer force calculations) and less accurate. The UI slider ranges from 0.1 to 20. Smaller theta is more accurate and slower. Softening `s_soft = 0.01` (≈ 0.1 pc) is added inside the distance square root so close encounters do not blow up.
 
 Particles outside the square region of interest (ROI) are skipped. Two particles at the exact same coordinates are stored as “renegades” and summed directly.
 
