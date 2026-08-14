@@ -376,7 +376,7 @@ export class CollisionRenderer {
 
     /** Assigns visual-only star / dust / H2 sprites to the current n-body particles. */
     private rebuildAppearance(): void {
-        this.appearance.rebuild(this.solver.getState(), this._galaxy1Stars, this.model.getN());
+        this.appearance.rebuild(this.solver.getState(), this.model.numStars1, this.model.getN());
     }
 
     /** Cycles tree overlay: off → approximation cells → complete tree → off. */

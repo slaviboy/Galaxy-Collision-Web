@@ -38,9 +38,12 @@ export class GalaxyAppearance {
     private flickerAmp: Float32Array = new Float32Array(0)
     private _count: number = 0
     private _starCount: number = 0
-    private _glowSprites: number = 0
+    private _glowSprites1: number = 0
+    private _glowSprites2: number = 0
+    private _bh2: number = 0
     private packedStars: Float32Array = new Float32Array(0)
-    private packedGlow: Float32Array = new Float32Array(0)
+    private packedGlow1: Float32Array = new Float32Array(0)
+    private packedGlow2: Float32Array = new Float32Array(0)
 
     public get count(): number {
         return this._count
@@ -50,8 +53,12 @@ export class GalaxyAppearance {
         return this._starCount
     }
 
-    public get glowVertexCount(): number {
-        return this._glowSprites * 6
+    public get glowVertexCount1(): number {
+        return this._glowSprites1 * 6
+    }
+
+    public get glowVertexCount2(): number {
+        return this._glowSprites2 * 6
     }
 
     /**
@@ -164,14 +171,21 @@ export class GalaxyAppearance {
             push(i, 0, 0, temp, mag, VISUAL_STAR, rnd() * 6.2832, flickerAmp)
         }
 
-        const disk: number[] = []
+        const g1Disk: number[] = []
+        const g2Disk: number[] = []
         for (let i = 0; i < n; ++i) {
-            if (i !== 0 && i !== bh2) {
-                disk.push(i)
+            if (i === 0 || i === bh2) {
+                continue
+            }
+            if (i < bh2) {
+                g1Disk.push(i)
+            }
+            else {
+                g2Disk.push(i)
             }
         }
 
-        if (disk.length > 0) {
+        if (g1Disk.length + g2Disk.length > 0) {
         /**
          * Visual-only two-arm spiral + bulge. Physics stays a round n-body
          * disk; dust/H2 are painted on like Galaxy-Renderer density waves.
@@ -189,23 +203,30 @@ export class GalaxyAppearance {
             return Math.min(1, bulge * 0.9 + arm * (0.35 + 0.65 * (1 - bulge)))
         }
 
-        // 2.) Dust — a faint haze on every disk star (the ISM) plus extra
-        // copies in the spiral arms. Sprites stay tight to stars so they
-        // merge into lanes instead of floating as isolated globes.
-        let dustBudget = 0
-        const dustCap = 50000
-        for (let s = 0; s < disk.length && dustBudget < dustCap; ++s) {
-            const parent = disk[s]
-            const g = galaxyOf(parent)
-            const px = state[parent * STATE_STRIDE]
-            const py = state[parent * STATE_STRIDE + 1]
-            const w = armWeight(px, py, g.cx, g.cy, g.rMax)
-            const rad = radiusOf(parent, g.cx, g.cy)
-            const copies = 3 + Math.floor(w * 8)
-            for (let k = 0; k < copies && dustBudget < dustCap; ++k) {
+        /**
+         * Fixed dust per galaxy — not shared, and not scaled by star count.
+         * Raising N only adds star points; both disks keep a full dusty haze.
+         */
+        const DUST_PER_GALAXY = 50000
+
+        // 2.) Dust — per galaxy. Offsets grow with the local star spacing so
+        // a sparse disk still fills in; a dense disk keeps dust tight (no globes).
+        const paintDust = (parents: number[]): void => {
+            if (parents.length === 0) {
+                return
+            }
+            const nS = parents.length
+            const g0 = galaxyOf(parents[0])
+            const cell = Math.max(0.04, 1.55 * g0.rMax * 0.85 / Math.sqrt(nS))
+            for (let i = 0; i < DUST_PER_GALAXY; ++i) {
+                const parent = parents[i % nS]
+                const g = galaxyOf(parent)
+                const px = state[parent * STATE_STRIDE]
+                const py = state[parent * STATE_STRIDE + 1]
+                const w = armWeight(px, py, g.cx, g.cy, g.rMax)
+                const rad = radiusOf(parent, g.cx, g.cy)
                 const ang = rnd() * 6.2832
-                const d = (0.01 + 0.06 * rnd()) * g.scale
-                // Arms pick up a little extra warmth (pink/amber lanes).
+                const d = Math.sqrt(rnd()) * cell
                 const armWarm = w > 0.5 ? -800 : 0
                 push(
                     parent,
@@ -216,66 +237,92 @@ export class GalaxyAppearance {
                     VISUAL_DUST,
                     0,
                     0)
-                dustBudget++
             }
         }
+        paintDust(g1Disk)
+        paintDust(g2Disk)
 
-        // 3.) Filaments along arm crests (Galaxy.cpp type-2 clumps)
-        const filamentParents: number[] = []
-        for (let s = 0; s < disk.length; ++s) {
-            const parent = disk[s]
-            const g = galaxyOf(parent)
-            const w = armWeight(
-                state[parent * STATE_STRIDE],
-                state[parent * STATE_STRIDE + 1],
-                g.cx, g.cy, g.rMax)
-            if (w > 0.55) {
-                filamentParents.push(parent)
+        // 3.) Filaments along arm crests — per galaxy, so G2 keeps lanes
+        // even when G1 has far more arm stars.
+        const paintFilaments = (parents: number[]): void => {
+            const filamentParents: number[] = []
+            for (let s = 0; s < parents.length; ++s) {
+                const parent = parents[s]
+                const g = galaxyOf(parent)
+                const w = armWeight(
+                    state[parent * STATE_STRIDE],
+                    state[parent * STATE_STRIDE + 1],
+                    g.cx, g.cy, g.rMax)
+                if (w > 0.55) {
+                    filamentParents.push(parent)
+                }
+            }
+            if (filamentParents.length === 0) {
+                return
+            }
+            const filamentGroups = Math.min(
+                Math.max(6, Math.floor(filamentParents.length / 40)),
+                50)
+            for (let g = 0; g < filamentGroups; ++g) {
+                const parent = filamentParents[Math.floor(rnd() * filamentParents.length)]
+                const gal = galaxyOf(parent)
+                const rad = radiusOf(parent, gal.cx, gal.cy)
+                const mag = 0.08 + 0.05 * rnd()
+                const count = 8 + Math.floor(rnd() * 14)
+                const baseAng = rnd() * 6.2832
+                for (let k = 0; k < count; ++k) {
+                    const a = baseAng + (rnd() - 0.5) * 0.28
+                    const d = (0.02 + 0.1 * rnd()) * gal.scale
+                    push(
+                        parent,
+                        Math.cos(a) * d,
+                        Math.sin(a) * d,
+                        tempFromRad(rad, gal.rMax, -1000),
+                        mag + 0.02 * rnd(),
+                        VISUAL_FILAMENT,
+                        0,
+                        0)
+                }
             }
         }
-        const filamentGroups = Math.min(
-            Math.max(4, Math.floor(filamentParents.length / 40)),
-            80)
-        if (filamentParents.length > 0) {
-        for (let g = 0; g < filamentGroups; ++g) {
-            const parent = filamentParents[Math.floor(rnd() * filamentParents.length)]
-            const gal = galaxyOf(parent)
-            const rad = radiusOf(parent, gal.cx, gal.cy)
-            const mag = 0.08 + 0.05 * rnd()
-            const count = 8 + Math.floor(rnd() * 14)
-            const baseAng = rnd() * 6.2832
-            for (let k = 0; k < count; ++k) {
-                const a = baseAng + (rnd() - 0.5) * 0.28
-                const d = (0.02 + 0.1 * rnd()) * gal.scale
-                push(
-                    parent,
-                    Math.cos(a) * d,
-                    Math.sin(a) * d,
-                    tempFromRad(rad, gal.rMax, -1000),
-                    mag + 0.02 * rnd(),
-                    VISUAL_FILAMENT,
-                    0,
-                    0)
-            }
-        }
-        }
+        paintFilaments(g1Disk)
+        paintFilaments(g2Disk)
 
-        // 4.) H2 in arm crests (star-forming regions)
-        const h2Parents = filamentParents.length > 0 ? filamentParents : disk
-        const numH2 = Math.min(90, Math.max(18, Math.floor(h2Parents.length / 45)))
-        for (let h = 0; h < numH2; ++h) {
-            const parent = h2Parents[Math.floor(rnd() * h2Parents.length)]
-            const gal = galaxyOf(parent)
-            const phase = rnd() * 6.2832
-            const mag = 0.12 + 0.08 * rnd()
-            const temp = 4500 + 2000 * rnd()
-            const ang = rnd() * 6.2832
-            const d = (0.02 + 0.08 * rnd()) * gal.scale
-            const ox = Math.cos(ang) * d
-            const oy = Math.sin(ang) * d
-            push(parent, ox, oy, temp, mag, VISUAL_H2_HALO, phase, 0.28)
-            push(parent, ox, oy, temp, mag, VISUAL_H2_CORE, phase, 0.28)
+        // 4.) H2 in arm crests — guaranteed pockets in both galaxies.
+        const paintH2 = (parents: number[]): void => {
+            if (parents.length === 0) {
+                return
+            }
+            const armParents: number[] = []
+            for (let s = 0; s < parents.length; ++s) {
+                const parent = parents[s]
+                const g = galaxyOf(parent)
+                const w = armWeight(
+                    state[parent * STATE_STRIDE],
+                    state[parent * STATE_STRIDE + 1],
+                    g.cx, g.cy, g.rMax)
+                if (w > 0.55) {
+                    armParents.push(parent)
+                }
+            }
+            const h2Parents = armParents.length > 0 ? armParents : parents
+            const numH2 = Math.min(48, Math.max(12, Math.floor(h2Parents.length / 45)))
+            for (let h = 0; h < numH2; ++h) {
+                const parent = h2Parents[Math.floor(rnd() * h2Parents.length)]
+                const gal = galaxyOf(parent)
+                const phase = rnd() * 6.2832
+                const mag = 0.12 + 0.08 * rnd()
+                const temp = 4500 + 2000 * rnd()
+                const ang = rnd() * 6.2832
+                const d = (0.02 + 0.08 * rnd()) * gal.scale
+                const ox = Math.cos(ang) * d
+                const oy = Math.sin(ang) * d
+                push(parent, ox, oy, temp, mag, VISUAL_H2_HALO, phase, 0.28)
+                push(parent, ox, oy, temp, mag, VISUAL_H2_CORE, phase, 0.28)
+            }
         }
+        paintH2(g2Disk)
+        paintH2(g1Disk)
         }
 
         this._count = items.length

@@ -18,7 +18,6 @@ export class VertexBufferGalaxyDust extends VertexBufferBase<VertexColor>
     private sizeFactor: number = 1
     private worldPerPixel: number = 0.03
     private displayFeatures: number = 2 | 4 | 8
-    private indexArray: Uint32Array | null = null
 
     constructor(gl: WebGL2RenderingContext) {
         super(gl, gl.DYNAMIC_DRAW)
@@ -50,13 +49,7 @@ export class VertexBufferGalaxyDust extends VertexBufferBase<VertexColor>
     }
 
     public updatePacked(floatArray: Float32Array, vertexCount: number): void {
-        if (this.indexArray == null || this.indexArray.length !== vertexCount) {
-            this.indexArray = new Uint32Array(vertexCount)
-            for (let i = 0; i < vertexCount; ++i) {
-                this.indexArray[i] = i
-            }
-        }
-        this.uploadDynamic(floatArray, this.indexArray, FLOATS_PER_GLOW_VERT, this.gl.TRIANGLES)
+        this.uploadDynamicArrays(floatArray, FLOATS_PER_GLOW_VERT, this.gl.TRIANGLES, vertexCount)
     }
 
     protected onSetCustomShaderVariables(): void {
@@ -152,7 +145,7 @@ export class VertexBufferGalaxyDust extends VertexBufferBase<VertexColor>
 
                 if (vertexType == 1) {
                     if ((features & 2) == 0) discard;
-                    FragColor = vec4(vertexColor.xyz, 0.07 * fade);
+                    FragColor = vec4(vertexColor.xyz, 0.10 * fade);
                 } else if (vertexType == 2) {
                     if ((features & 4) == 0) discard;
                     FragColor = vec4(vertexColor.xyz, 0.08 * fade);
