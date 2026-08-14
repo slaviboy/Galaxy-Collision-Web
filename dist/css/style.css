@@ -13,6 +13,8 @@
 canvas {
     position: absolute;
     background-color: #00001a;
+    cursor: grab;
+    user-select: none;
 }
 
 fieldset {

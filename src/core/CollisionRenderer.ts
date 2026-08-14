@@ -3,10 +3,13 @@ import { mat4, vec3 } from 'gl-matrix'
 import { VertexColor } from '../entities/VertexColor'
 import { VertexBufferLines } from '../vertices/VertexBufferLines'
 import { VertexBufferParticles } from '../vertices/VertexBufferParticles'
+import { VertexBufferGalaxyStars } from '../vertices/VertexBufferGalaxyStars'
+import { VertexBufferGalaxyDust } from '../vertices/VertexBufferGalaxyDust'
 import { ModelNBody } from './ModelNBody'
 import { IntegratorADB6 } from './IntegratorADB6'
 import { BHTreeNode } from './BHTree'
 import { Vec3 } from '../entities/Vec3'
+import { GalaxyAppearance } from './GalaxyAppearance'
 
 /** Bit flags for overlays and simulation control (same values as C++ NBodyWnd). */
 export enum DisplayState {
@@ -42,6 +45,14 @@ export class CollisionRenderer {
     private vertTree: VertexBufferLines;
     private vertRoi: VertexBufferLines;
     private vertBodies: VertexBufferParticles;
+    private vertGalaxy: VertexBufferGalaxyStars;
+    private vertGalaxyDust1: VertexBufferGalaxyDust;
+    private vertGalaxyDust2: VertexBufferGalaxyDust;
+    private appearance: GalaxyAppearance = new GalaxyAppearance();
+    /** Galaxy-Renderer look (dust, red giants, H2) instead of white dots. */
+    private _realisticLook: boolean = false;
+    /** Wall-clock seconds for star flicker / H2 pulse. */
+    private visualTime: number = 0;
 
     /** Orthographic field of view (length of an axis in parsecs). C++ starts at 30. */
     private _fov: number = 30;
@@ -53,6 +64,8 @@ export class CollisionRenderer {
     private camPos: vec3 = vec3.fromValues(0, 0, 2);
     private camLookAt: vec3 = vec3.fromValues(0, 0, 0);
     private camOrient: vec3 = vec3.fromValues(0, 1, 0);
+    /** World point grabbed at mouse-down while panning, or null. */
+    private panGrab: { x: number, y: number } | null = null;
 
     private flags: DisplayState = DisplayState.BODIES | DisplayState.AXIS | DisplayState.STAT | DisplayState.VERBOSE;
 
@@ -66,6 +79,8 @@ export class CollisionRenderer {
     private _galaxy1Y: number = ModelNBody.GALAXY1_Y_DEFAULT;
     private _galaxy2X: number = ModelNBody.GALAXY2_X_DEFAULT;
     private _galaxy2Y: number = ModelNBody.GALAXY2_Y_DEFAULT;
+    private _galaxy1Mass: number = ModelNBody.GALAXY1_BH_MASS_DEFAULT;
+    private _galaxy2Mass: number = ModelNBody.GALAXY2_BH_MASS_DEFAULT;
 
     private model: ModelNBody;
     private solver: IntegratorADB6;
@@ -95,6 +110,9 @@ export class CollisionRenderer {
         this.vertTree = new VertexBufferLines(this.gl, 1, this.gl.DYNAMIC_DRAW);
         this.vertRoi = new VertexBufferLines(this.gl, 1, this.gl.DYNAMIC_DRAW);
         this.vertBodies = new VertexBufferParticles(this.gl);
+        this.vertGalaxy = new VertexBufferGalaxyStars(this.gl);
+        this.vertGalaxyDust1 = new VertexBufferGalaxyDust(this.gl);
+        this.vertGalaxyDust2 = new VertexBufferGalaxyDust(this.gl);
 
         this.statsEl = document.getElementById("statsOverlay");
         this.helpEl = document.getElementById("helpOverlay");
@@ -102,7 +120,8 @@ export class CollisionRenderer {
         this.model = new ModelNBody(
             this._galaxy1Stars, this._galaxy2Stars,
             this._galaxy1X, this._galaxy1Y,
-            this._galaxy2X, this._galaxy2Y);
+            this._galaxy2X, this._galaxy2Y,
+            this._galaxy1Mass, this._galaxy2Mass);
         this.solver = new IntegratorADB6(this.model, this.model.getSuggestedTimeStep());
         this.solver.setInitialState(this.model.getInitialState());
 
@@ -154,6 +173,21 @@ export class CollisionRenderer {
 
     public set showBodies(value: boolean) {
         this.setFlag(DisplayState.BODIES, value);
+    }
+
+    /**
+     * When true, bodies are drawn with Galaxy-Renderer sprites (dust, red
+     * giants, flickering stars, H2) instead of white dots. Physics is unchanged.
+     */
+    public get realisticLook(): boolean {
+        return this._realisticLook;
+    }
+
+    public set realisticLook(value: boolean) {
+        this._realisticLook = value;
+        if (value) {
+            this.rebuildAppearance();
+        }
     }
 
     public get showAxis(): boolean {
@@ -288,6 +322,37 @@ export class CollisionRenderer {
         this.setGalaxyCoord('_galaxy2Y', value);
     }
 
+    public get galaxy1Mass(): number {
+        return this._galaxy1Mass;
+    }
+
+    public set galaxy1Mass(value: number) {
+        this.setGalaxyMass('_galaxy1Mass', value);
+    }
+
+    public get galaxy2Mass(): number {
+        return this._galaxy2Mass;
+    }
+
+    public set galaxy2Mass(value: number) {
+        this.setGalaxyMass('_galaxy2Mass', value);
+    }
+
+    private setGalaxyMass(field: '_galaxy1Mass' | '_galaxy2Mass', value: number): void {
+        const n = this.clampMass(value);
+        if (n === this[field]) {
+            return;
+        }
+        this[field] = n;
+        this.reset();
+    }
+
+    private clampMass(value: number): number {
+        return Math.min(
+            ModelNBody.BH_MASS_MAX,
+            Math.max(ModelNBody.BH_MASS_MIN, Math.round(value)));
+    }
+
     private setGalaxyCoord(field: '_galaxy1X' | '_galaxy1Y' | '_galaxy2X' | '_galaxy2Y', value: number): void {
         const n = this.clampCoord(value);
         if (n === this[field]) {
@@ -339,9 +404,18 @@ export class CollisionRenderer {
         this.model = new ModelNBody(
             this._galaxy1Stars, this._galaxy2Stars,
             this._galaxy1X, this._galaxy1Y,
-            this._galaxy2X, this._galaxy2Y);
+            this._galaxy2X, this._galaxy2Y,
+            this._galaxy1Mass, this._galaxy2Mass);
         this.solver = new IntegratorADB6(this.model, this.model.getSuggestedTimeStep());
         this.solver.setInitialState(this.model.getInitialState());
+        if (this._realisticLook) {
+            this.rebuildAppearance();
+        }
+    }
+
+    /** Assigns visual-only star / dust / H2 sprites to the current n-body particles. */
+    private rebuildAppearance(): void {
+        this.appearance.rebuild(this.solver.getState(), this.model.numStars1, this.model.getN());
     }
 
     /** Cycles tree overlay: off → approximation cells → complete tree → off. */
@@ -367,6 +441,9 @@ export class CollisionRenderer {
         this.vertTree.initialize();
         this.vertRoi.initialize();
         this.vertBodies.initialize();
+        this.vertGalaxy.initialize();
+        this.vertGalaxyDust1.initialize();
+        this.vertGalaxyDust2.initialize();
 
         this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
         this.gl.disable(this.gl.DEPTH_TEST);
@@ -384,17 +461,19 @@ export class CollisionRenderer {
     }
 
     /**
-     * Orthographic projection of size `_fov`, aspect-corrected, plus lookAt.
-     * Matches C++ `glOrtho(-l,l,-l,l,-l,l)` with extra aspect for widescreen.
+     * Orthographic projection of size `_fov`, aspect-corrected, centered on
+     * `camLookAt`. Pan lives in the projection (shaders use `projMat` only).
      */
     private adjustCamera(): void {
-        let l: number = this._fov / 2.0;
-        let aspect: number = this.canvas.width / this.canvas.height;
+        const l: number = this._fov / 2.0;
+        const aspect: number = this.canvas.width / Math.max(this.canvas.height, 1);
+        const cx: number = this.camLookAt[0];
+        const cy: number = this.camLookAt[1];
 
         mat4.ortho(
             this.matProjection,
-            -l * aspect, l * aspect,
-            -l, l,
+            -l * aspect + cx, l * aspect + cx,
+            -l + cy, l + cy,
             -l, l);
 
         mat4.lookAt(
@@ -404,9 +483,111 @@ export class CollisionRenderer {
             this.camOrient);
     }
 
-    /** Registers the keyboard shortcuts from NBodyWnd. */
+    /** Registers keyboard shortcuts, mouse-wheel zoom, and click-drag pan. */
     private bindInput(): void {
         window.addEventListener("keydown", (ev: KeyboardEvent) => this.onKeyDown(ev));
+        window.addEventListener("wheel", (ev: WheelEvent) => this.onWheel(ev), { passive: false });
+        window.addEventListener("mousedown", (ev: MouseEvent) => this.onMouseDown(ev));
+        window.addEventListener("mousemove", (ev: MouseEvent) => this.onMouseMove(ev));
+        window.addEventListener("mouseup", () => this.endPan());
+        window.addEventListener("blur", () => this.endPan());
+        this.canvas.style.cursor = "grab";
+    }
+
+    /** True when the event target is the left-hand control panel. */
+    private isUiTarget(target: EventTarget | null): boolean {
+        if (target == null || !(target instanceof HTMLElement)) {
+            return false;
+        }
+        return target.closest("form, .controls, input, select, button, label") != null;
+    }
+
+    /**
+     * Converts a window mouse position to world XY under the current ortho view.
+     */
+    private screenToWorld(clientX: number, clientY: number): { x: number, y: number } {
+        const rect = this.canvas.getBoundingClientRect();
+        const nx = ((clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
+        const ny = 1 - ((clientY - rect.top) / Math.max(rect.height, 1)) * 2;
+        const halfH = this._fov / 2;
+        const halfW = halfH * (this.canvas.width / Math.max(this.canvas.height, 1));
+        return {
+            x: this.camLookAt[0] + nx * halfW,
+            y: this.camLookAt[1] + ny * halfH
+        };
+    }
+
+    /**
+     * Scroll-wheel zoom centered on the cursor (the world point under the
+     * mouse stays under the mouse, like a photo viewer). Ignored while the
+     * pointer is over the control panel.
+     */
+    private onWheel(ev: WheelEvent): void {
+        if (this.isUiTarget(ev.target)) {
+            return;
+        }
+
+        ev.preventDefault();
+        const before = this.screenToWorld(ev.clientX, ev.clientY);
+        const scale = Math.exp(ev.deltaY * 0.0015);
+        const next = Math.min(80, Math.max(0.5, this._fov * scale));
+        if (Math.abs(next - this._fov) < 1e-9) {
+            return;
+        }
+        this._fov = next;
+        const after = this.screenToWorld(ev.clientX, ev.clientY);
+        const dx = before.x - after.x;
+        const dy = before.y - after.y;
+        this.camPos[0] += dx;
+        this.camPos[1] += dy;
+        this.camLookAt[0] += dx;
+        this.camLookAt[1] += dy;
+        this.adjustCamera();
+        this.notifyFlagsChanged();
+    }
+
+    /**
+     * Starts a pan: the world point under the cursor is dragged with the mouse.
+     */
+    private onMouseDown(ev: MouseEvent): void {
+        if (ev.button !== 0 || this.isUiTarget(ev.target)) {
+            return;
+        }
+        ev.preventDefault();
+        this.panGrab = this.screenToWorld(ev.clientX, ev.clientY);
+        this.canvas.style.cursor = "grabbing";
+    }
+
+    /**
+     * Moves the view so the grabbed world point stays under the cursor.
+     */
+    private onMouseMove(ev: MouseEvent): void {
+        if (this.panGrab == null) {
+            return;
+        }
+        ev.preventDefault();
+        const rect = this.canvas.getBoundingClientRect();
+        const nx = ((ev.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
+        const ny = 1 - ((ev.clientY - rect.top) / Math.max(rect.height, 1)) * 2;
+        const halfH = this._fov / 2;
+        const halfW = halfH * (this.canvas.width / Math.max(this.canvas.height, 1));
+        const lookX = this.panGrab.x - nx * halfW;
+        const lookY = this.panGrab.y - ny * halfH;
+        const dx = lookX - this.camLookAt[0];
+        const dy = lookY - this.camLookAt[1];
+        this.camLookAt[0] = lookX;
+        this.camLookAt[1] = lookY;
+        this.camPos[0] += dx;
+        this.camPos[1] += dy;
+        this.adjustCamera();
+    }
+
+    private endPan(): void {
+        if (this.panGrab == null) {
+            return;
+        }
+        this.panGrab = null;
+        this.canvas.style.cursor = "grab";
     }
 
     /**
@@ -672,7 +853,19 @@ export class CollisionRenderer {
             this.updateTree();
         }
         if (this.showBodies) {
-            this.vertBodies.updateFromState(this.solver.getState(), this.model.getN());
+            if (this._realisticLook) {
+                this.appearance.pack(this.solver.getState(), this.model.getN());
+                this.vertGalaxy.setShaderVariables(this.visualTime, 62, 52, 1);
+                this.vertGalaxy.updatePacked(this.appearance.getStarPacked(), this.appearance.starCount);
+                const worldPerPixel = this._fov / Math.max(this.canvas.height, 1);
+                this.vertGalaxyDust1.setShaderVariables(this.visualTime, 62, 52, 1, worldPerPixel);
+                this.vertGalaxyDust2.setShaderVariables(this.visualTime, 62, 52, 1, worldPerPixel);
+                this.vertGalaxyDust1.updatePacked(this.appearance.getGlowPacked1(), this.appearance.glowVertexCount1);
+                this.vertGalaxyDust2.updatePacked(this.appearance.getGlowPacked2(), this.appearance.glowVertexCount2);
+            }
+            else {
+                this.vertBodies.updateFromState(this.solver.getState(), this.model.getN());
+            }
         }
 
         this.updateStats();
@@ -681,18 +874,30 @@ export class CollisionRenderer {
 
     /** Clears to dark blue and draws axis, tree, particles, then ROI. */
     private render(): void {
-        this.gl.clearColor(0.0, 0.0, 0.1, 1.0);
+        if (this._realisticLook) {
+            this.gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        }
+        else {
+            this.gl.clearColor(0.0, 0.0, 0.1, 1.0);
+        }
         this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
         this.adjustCamera();
 
-        if (this.showAxis) {
+        if (this.showAxis && !this._realisticLook) {
             this.vertAxis.draw(this.matView, this.matProjection);
         }
         if (this.hasFlag(DisplayState.TREE)) {
             this.vertTree.draw(this.matView, this.matProjection);
         }
         if (this.showBodies) {
-            this.vertBodies.draw(this.matView, this.matProjection);
+            if (this._realisticLook) {
+                this.vertGalaxy.draw(this.matView, this.matProjection);
+                this.vertGalaxyDust1.draw(this.matView, this.matProjection);
+                this.vertGalaxyDust2.draw(this.matView, this.matProjection);
+            }
+            else {
+                this.vertBodies.draw(this.matView, this.matProjection);
+            }
         }
         if (this.showRoi) {
             this.vertRoi.draw(this.matView, this.matProjection);
@@ -709,6 +914,7 @@ export class CollisionRenderer {
                 this.frameCount = 0;
                 this.fpsLastTime = timestamp;
             }
+            this.visualTime = timestamp * 0.001;
 
             this.update();
             this.render();

@@ -22,6 +22,8 @@ h     - display help text
 r     - display region of interest
 y/x   - increase/decrease theta
 +/-   - zoom
+wheel - zoom to cursor
+drag  - pan the scene
 space - halt simulation</div>
 
 	<div class="container">
@@ -49,6 +51,16 @@ space - halt simulation</div>
 								<label for="slGalaxy2Stars">Galaxy 2 stars</label><br />
 								<input type="range" min="99" max="10000" step="1" value="999" id="slGalaxy2Stars">
 								<span id="labelGalaxy2Stars"></span>
+							</div>
+							<div class="slider">
+								<label for="slGalaxy1Mass">Galaxy 1 black hole (M☉)</label><br />
+								<input type="range" min="10000" max="10000000" step="10000" value="1000000" id="slGalaxy1Mass">
+								<span id="labelGalaxy1Mass"></span>
+							</div>
+							<div class="slider">
+								<label for="slGalaxy2Mass">Galaxy 2 black hole (M☉)</label><br />
+								<input type="range" min="10000" max="10000000" step="10000" value="100000" id="slGalaxy2Mass">
+								<span id="labelGalaxy2Mass"></span>
 							</div>
 							<div class="slider">
 								<label for="slGalaxy1X">Galaxy 1 center X (pc)</label><br />
@@ -83,6 +95,10 @@ space - halt simulation</div>
 							<div class="checkbox">
 								<input type="checkbox" id="cbShowBodies" checked />
 								<label for="cbShowBodies">bodies</label>
+							</div>
+							<div class="checkbox">
+								<input type="checkbox" id="cbRealisticLook" />
+								<label for="cbRealisticLook">realistic galaxies (dust, red giants, H2)</label>
 							</div>
 							<div class="checkbox">
 								<input type="checkbox" id="cbShowAxis" checked />

@@ -20,8 +20,10 @@ export abstract class VertexBufferBase<TVertex extends VertexBase>
 
 	protected vert: TVertex[] = [];
 	protected idx: number[] = [];
-	/** Number of indices passed to `drawElements`. */
+	/** Number of indices (`drawElements`) or vertices (`drawArrays`). */
 	protected elementCount: number = 0;
+	/** Dust quads use `drawArrays` so a 16-bit index limit cannot clip a galaxy. */
+	protected indexedDraw: boolean = true;
 
 	protected shaderProgram?: WebGLProgram | null = null;
 	private _primitiveType: number = 0;
@@ -210,7 +212,12 @@ export abstract class VertexBufferBase<TVertex extends VertexBase>
 		this.onBeforeDraw();
 
 		this.gl.bindVertexArray(this.vao);
-		this.gl.drawElements(this.primitiveType, this.elementCount, this.gl.UNSIGNED_INT, 0);
+		if (this.indexedDraw) {
+			this.gl.drawElements(this.primitiveType, this.elementCount, this.gl.UNSIGNED_INT, 0);
+		}
+		else {
+			this.gl.drawArrays(this.primitiveType, 0, this.elementCount);
+		}
 		this.gl.bindVertexArray(null);
 
 		this.gl.disable(this.gl.BLEND);
@@ -236,6 +243,7 @@ export abstract class VertexBufferBase<TVertex extends VertexBase>
 		this.idx = idx;
 		this.elementCount = idx.length;
 		this.primitiveType = type;
+		this.indexedDraw = true;
 
 		let numberOfFloats: number = vert[0].numberOfFloats();
 		let floatArray = new Float32Array(vert.length * numberOfFloats);
@@ -282,6 +290,7 @@ export abstract class VertexBufferBase<TVertex extends VertexBase>
 
 		this.elementCount = indices.length;
 		this.primitiveType = type;
+		this.indexedDraw = true;
 
 		this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vbo);
 		this.gl.bufferData(this.gl.ARRAY_BUFFER, floatArray, this.bufferMode);
@@ -296,6 +305,34 @@ export abstract class VertexBufferBase<TVertex extends VertexBase>
 
 		this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.ibo);
 		this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, indices, this.bufferMode);
+
+		this.gl.bindVertexArray(null);
+	}
+
+	/**
+	 * Non-indexed upload. Prefer this for large dust meshes: `drawElements`
+	 * silently clips on GPUs whose max element index is 65535.
+	 */
+	public uploadDynamicArrays(floatArray: Float32Array, floatsPerVertex: number, type: number, vertexCount: number): void {
+		if (floatArray.length == 0 || vertexCount == 0) {
+			this.elementCount = 0;
+			return;
+		}
+
+		this.elementCount = vertexCount;
+		this.primitiveType = type;
+		this.indexedDraw = false;
+
+		this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vbo);
+		this.gl.bufferData(this.gl.ARRAY_BUFFER, floatArray, this.bufferMode);
+
+		this.gl.bindVertexArray(this.vao);
+		this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vbo);
+
+		this.attributes.forEach((attrib) => {
+			this.gl.enableVertexAttribArray(attrib.attribIdx);
+			this.gl.vertexAttribPointer(attrib.attribIdx, attrib.size, this.gl.FLOAT, false, floatsPerVertex * 4, attrib.offset);
+		});
 
 		this.gl.bindVertexArray(null);
 	}

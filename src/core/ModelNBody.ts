@@ -53,6 +53,9 @@ export class ModelNBody extends IModel {
     /** Initial center of galaxy 2 (secondary black hole), parsecs. */
     private _cx2: number = ModelNBody.GALAXY2_X_DEFAULT;
     private _cy2: number = ModelNBody.GALAXY2_Y_DEFAULT;
+    /** Central black-hole masses (solar masses). */
+    private _mass1: number = ModelNBody.GALAXY1_BH_MASS_DEFAULT;
+    private _mass2: number = ModelNBody.GALAXY2_BH_MASS_DEFAULT;
     /** When true, `builtTree` dumps the quadtree to the console. */
     private _bVerbose: boolean = false;
 
@@ -68,6 +71,12 @@ export class ModelNBody extends IModel {
     public static readonly GALAXY2_Y_DEFAULT = 10;
     public static readonly POSITION_MIN = -50;
     public static readonly POSITION_MAX = 50;
+    /** C++ InitCollision: primary black hole mass (solar masses). */
+    public static readonly GALAXY1_BH_MASS_DEFAULT = 1000000;
+    /** C++ InitCollision: secondary black hole mass (solar masses). */
+    public static readonly GALAXY2_BH_MASS_DEFAULT = 100000;
+    public static readonly BH_MASS_MIN = 10000;
+    public static readonly BH_MASS_MAX = 10000000;
 
     /**
      * @param numStars1 Disk stars in galaxy 1 (excluding the central black hole).
@@ -76,6 +85,8 @@ export class ModelNBody extends IModel {
      * @param cy1 Galaxy 1 center y (parsecs).
      * @param cx2 Galaxy 2 center x (parsecs).
      * @param cy2 Galaxy 2 center y (parsecs).
+     * @param mass1 Galaxy 1 black-hole mass (solar masses).
+     * @param mass2 Galaxy 2 black-hole mass (solar masses).
      */
     constructor(
         numStars1: number = ModelNBody.GALAXY1_STARS_DEFAULT,
@@ -83,7 +94,9 @@ export class ModelNBody extends IModel {
         cx1: number = ModelNBody.GALAXY1_X_DEFAULT,
         cy1: number = ModelNBody.GALAXY1_Y_DEFAULT,
         cx2: number = ModelNBody.GALAXY2_X_DEFAULT,
-        cy2: number = ModelNBody.GALAXY2_Y_DEFAULT) {
+        cy2: number = ModelNBody.GALAXY2_Y_DEFAULT,
+        mass1: number = ModelNBody.GALAXY1_BH_MASS_DEFAULT,
+        mass2: number = ModelNBody.GALAXY2_BH_MASS_DEFAULT) {
         super("N-Body simulation (2D)");
         this._numStars1 = Math.max(1, Math.floor(numStars1));
         this._numStars2 = Math.max(1, Math.floor(numStars2));
@@ -91,6 +104,12 @@ export class ModelNBody extends IModel {
         this._cy1 = cy1;
         this._cx2 = cx2;
         this._cy2 = cy2;
+        this._mass1 = Math.min(
+            ModelNBody.BH_MASS_MAX,
+            Math.max(ModelNBody.BH_MASS_MIN, mass1));
+        this._mass2 = Math.min(
+            ModelNBody.BH_MASS_MAX,
+            Math.max(ModelNBody.BH_MASS_MIN, mass2));
         BHTreeNode.s_gamma = ModelNBody.gamma_1;
         this.initCollision();
     }
@@ -186,9 +205,9 @@ export class ModelNBody extends IModel {
     /**
      * Collision initial condition (matches C++ `InitCollision` layout,
      * with configurable galaxy centers):
-     * - i = 0: primary black hole at (cx1, cy1), mass 1e6
+     * - i = 0: primary black hole at (cx1, cy1), mass `_mass1`
      * - i = 1 .. numStars1: disk around BH1 (radius scale 10)
-     * - i = numStars1 + 1: secondary black hole at (cx2, cy2), mass 1e5, v *= 0.9
+     * - i = numStars1 + 1: secondary black hole at (cx2, cy2), mass `_mass2`, v *= 0.9
      * - remaining: disk around BH2 (radius scale 3), velocities added to BH2
      */
     public initCollision(): void {
@@ -209,7 +228,7 @@ export class ModelNBody extends IModel {
                 st.y = this._cy1;
                 st.vx = 0;
                 st.vy = 0;
-                st.mass = 1000000;
+                st.mass = this._mass1;
             }
             else if (i < bh2Index) {
                 const rad = 10;
@@ -224,7 +243,7 @@ export class ModelNBody extends IModel {
                 blackHole2.copyFrom(st);
                 st.x = this._cx2;
                 st.y = this._cy2;
-                st.mass = 100000;
+                st.mass = this._mass2;
                 this.getOrbitalVelocity(blackHole, blackHole2);
                 blackHole2.vx *= 0.9;
                 blackHole2.vy *= 0.9;
