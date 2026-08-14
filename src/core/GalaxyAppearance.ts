@@ -112,41 +112,63 @@ export class GalaxyAppearance {
         const cy2 = state[bh2 * STATE_STRIDE + 1]
         const rDisk1 = 10
         const rDisk2 = 3
-        const baseTemp = 4000
-        // Galaxy.cpp: temp = baseTemp + rad/4.5 with rad up to ~13000 pc.
+        const galaxyOf = (parent: number): { cx: number, cy: number, rMax: number, scale: number } => {
+            const g1 = parent < bh2
+            return {
+                cx: g1 ? cx1 : cx2,
+                cy: g1 ? cy1 : cy2,
+                rMax: g1 ? rDisk1 : rDisk2,
+                scale: g1 ? 1 : 0.45
+            }
+        }
+
+        // Inner gold → outer blue, matching Galaxy-Renderer dust temperature.
         const tempFromRad = (rad: number, rMax: number, extra: number): number =>
-            baseTemp + (rad / Math.max(rMax, 1e-6)) * (13000 / 4.5) + extra
+            3400 + (rad / Math.max(rMax, 1e-6)) * 6400 + extra
+
+        // 1.) Stars — cooler red/gold in the bulge, bluer in the outer disk
+        for (let i = 0; i < n; ++i) {
+            const isBh = i === 0 || i === bh2
+            if (isBh) {
+                push(i, 0, 0, 5200, 1.0, VISUAL_STAR, rnd() * 6.2832, 0.03)
+                continue
+            }
+
+            const gal = galaxyOf(i)
+            const u = radiusOf(i, gal.cx, gal.cy) / gal.rMax
+            let mag = 0.12 + 0.42 * rnd()
+            if (i % 60 === 0) {
+                mag = Math.min(1, mag + 0.15 + rnd() * 0.4)
+            }
+            const roll = rnd()
+            let temp: number
+            let flickerAmp = 0.04 + 0.06 * rnd()
+            if (roll < 0.09) {
+                temp = 2600 + 1100 * rnd()
+                flickerAmp = 0.12 + 0.22 * rnd()
+                mag = Math.min(1, mag + 0.15)
+            }
+            else if (u > 0.4 && roll < 0.28) {
+                temp = 8200 + 1800 * rnd()
+                mag = Math.min(1, mag + 0.08)
+            }
+            else if (u < 0.22) {
+                temp = 4000 + 1600 * rnd()
+            }
+            else {
+                temp = 4800 + u * 4200 + (rnd() - 0.5) * 1200
+            }
+            if (rnd() < 0.04) {
+                flickerAmp = 0.2 + 0.3 * rnd()
+            }
+            push(i, 0, 0, temp, mag, VISUAL_STAR, rnd() * 6.2832, flickerAmp)
+        }
 
         const disk: number[] = []
         for (let i = 0; i < n; ++i) {
             if (i !== 0 && i !== bh2) {
                 disk.push(i)
             }
-        }
-
-        // 1.) Stars — Galaxy.cpp InitStarsAndDust (type 0)
-        for (let i = 0; i < n; ++i) {
-            const isBh = i === 0 || i === bh2
-            if (isBh) {
-                push(i, 0, 0, 4800, 1.0, VISUAL_STAR, rnd() * 6.2832, 0.03)
-                continue
-            }
-
-            let mag = 0.1 + 0.4 * rnd()
-            if (i % 60 === 0) {
-                mag = Math.min(1, mag + 0.1 + rnd() * 0.4)
-            }
-            const roll = rnd()
-            let temp = 6000 + (4000 * rnd() - 2000)
-            let flickerAmp = 0.04 + 0.06 * rnd()
-            if (roll < 0.08) {
-                temp = 2800 + 1000 * rnd()
-                flickerAmp = 0.12 + 0.2 * rnd()
-            }
-            else if (rnd() < 0.04) {
-                flickerAmp = 0.2 + 0.3 * rnd()
-            }
-            push(i, 0, 0, temp, mag, VISUAL_STAR, rnd() * 6.2832, flickerAmp)
         }
 
         if (disk.length > 0) {
@@ -167,21 +189,11 @@ export class GalaxyAppearance {
             return Math.min(1, bulge * 0.9 + arm * (0.35 + 0.65 * (1 - bulge)))
         }
 
-        const galaxyOf = (parent: number): { cx: number, cy: number, rMax: number, scale: number } => {
-            const g1 = parent < bh2
-            return {
-                cx: g1 ? cx1 : cx2,
-                cy: g1 ? cy1 : cy2,
-                rMax: g1 ? rDisk1 : rDisk2,
-                scale: g1 ? 1 : 0.45
-            }
-        }
-
         // 2.) Dust — a faint haze on every disk star (the ISM) plus extra
         // copies in the spiral arms. Sprites stay tight to stars so they
         // merge into lanes instead of floating as isolated globes.
         let dustBudget = 0
-        const dustCap = 40000
+        const dustCap = 50000
         for (let s = 0; s < disk.length && dustBudget < dustCap; ++s) {
             const parent = disk[s]
             const g = galaxyOf(parent)
@@ -189,16 +201,18 @@ export class GalaxyAppearance {
             const py = state[parent * STATE_STRIDE + 1]
             const w = armWeight(px, py, g.cx, g.cy, g.rMax)
             const rad = radiusOf(parent, g.cx, g.cy)
-            const copies = 2 + Math.floor(w * 6)
+            const copies = 3 + Math.floor(w * 8)
             for (let k = 0; k < copies && dustBudget < dustCap; ++k) {
                 const ang = rnd() * 6.2832
                 const d = (0.01 + 0.06 * rnd()) * g.scale
+                // Arms pick up a little extra warmth (pink/amber lanes).
+                const armWarm = w > 0.5 ? -800 : 0
                 push(
                     parent,
                     Math.cos(ang) * d,
                     Math.sin(ang) * d,
-                    tempFromRad(rad, g.rMax, 0),
-                    0.04 + 0.12 * rnd(),
+                    tempFromRad(rad, g.rMax, armWarm),
+                    0.05 + 0.13 * rnd(),
                     VISUAL_DUST,
                     0,
                     0)
@@ -248,19 +262,19 @@ export class GalaxyAppearance {
 
         // 4.) H2 in arm crests (star-forming regions)
         const h2Parents = filamentParents.length > 0 ? filamentParents : disk
-        const numH2 = Math.min(48, Math.max(8, Math.floor(h2Parents.length / 80)))
+        const numH2 = Math.min(90, Math.max(18, Math.floor(h2Parents.length / 45)))
         for (let h = 0; h < numH2; ++h) {
             const parent = h2Parents[Math.floor(rnd() * h2Parents.length)]
             const gal = galaxyOf(parent)
             const phase = rnd() * 6.2832
-            const mag = 0.08 + 0.05 * rnd()
-            const temp = 5500 + 2500 * rnd()
+            const mag = 0.12 + 0.08 * rnd()
+            const temp = 4500 + 2000 * rnd()
             const ang = rnd() * 6.2832
             const d = (0.02 + 0.08 * rnd()) * gal.scale
             const ox = Math.cos(ang) * d
             const oy = Math.sin(ang) * d
-            push(parent, ox, oy, temp, mag, VISUAL_H2_HALO, phase, 0.22)
-            push(parent, ox, oy, temp, mag, VISUAL_H2_CORE, phase, 0.22)
+            push(parent, ox, oy, temp, mag, VISUAL_H2_HALO, phase, 0.28)
+            push(parent, ox, oy, temp, mag, VISUAL_H2_CORE, phase, 0.28)
         }
         }
 
