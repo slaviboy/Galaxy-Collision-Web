@@ -89,6 +89,9 @@ export class UiController {
             this.el("labelGalaxy2Stars").innerHTML = String(this.renderer.galaxy2Stars)
         }
 
+        this.bindMassSlider("slGalaxy1Mass", "labelGalaxy1Mass", (v) => { this.renderer.galaxy1Mass = v })
+        this.bindMassSlider("slGalaxy2Mass", "labelGalaxy2Mass", (v) => { this.renderer.galaxy2Mass = v })
+
         this.bindCoordSlider("slGalaxy1X", "labelGalaxy1X", (v) => { this.renderer.galaxy1X = v })
         this.bindCoordSlider("slGalaxy1Y", "labelGalaxy1Y", (v) => { this.renderer.galaxy1Y = v })
         this.bindCoordSlider("slGalaxy2X", "labelGalaxy2X", (v) => { this.renderer.galaxy2X = v })
@@ -112,6 +115,32 @@ export class UiController {
             apply(parseFloat(sl.value))
             this.el(labelId).innerHTML = sl.value
         }
+    }
+
+    /**
+     * Black-hole mass sliders rebuild the collision IC on release.
+     * Labels show solar masses with grouping (e.g. 1,000,000).
+     */
+    private bindMassSlider(id: string, labelId: string, apply: (value: number) => void): void {
+        const sl = this.el<HTMLInputElement>(id)
+        sl.oninput = () => {
+            this.el(labelId).innerHTML = this.formatMass(parseFloat(sl.value))
+        }
+        sl.onchange = () => {
+            apply(parseFloat(sl.value))
+            this.el(labelId).innerHTML = this.formatMass(this.massFromSlider(id))
+        }
+    }
+
+    private massFromSlider(id: string): number {
+        if (id === "slGalaxy1Mass") {
+            return this.renderer.galaxy1Mass
+        }
+        return this.renderer.galaxy2Mass
+    }
+
+    private formatMass(value: number): string {
+        return Math.round(value).toLocaleString("en-US")
     }
 
     /** Copies renderer flags and slider values into the form controls. */
@@ -141,6 +170,14 @@ export class UiController {
         const slG2 = this.el<HTMLInputElement>("slGalaxy2Stars")
         slG2.value = String(this.renderer.galaxy2Stars)
         this.el("labelGalaxy2Stars").innerHTML = slG2.value
+
+        const slG1M = this.el<HTMLInputElement>("slGalaxy1Mass")
+        slG1M.value = String(this.renderer.galaxy1Mass)
+        this.el("labelGalaxy1Mass").innerHTML = this.formatMass(this.renderer.galaxy1Mass)
+
+        const slG2M = this.el<HTMLInputElement>("slGalaxy2Mass")
+        slG2M.value = String(this.renderer.galaxy2Mass)
+        this.el("labelGalaxy2Mass").innerHTML = this.formatMass(this.renderer.galaxy2Mass)
 
         const slG1X = this.el<HTMLInputElement>("slGalaxy1X")
         slG1X.value = String(this.renderer.galaxy1X)
