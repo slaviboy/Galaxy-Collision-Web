@@ -64,6 +64,8 @@ export class CollisionRenderer {
     private camPos: vec3 = vec3.fromValues(0, 0, 2);
     private camLookAt: vec3 = vec3.fromValues(0, 0, 0);
     private camOrient: vec3 = vec3.fromValues(0, 1, 0);
+    /** World point grabbed at mouse-down while panning, or null. */
+    private panGrab: { x: number, y: number } | null = null;
 
     private flags: DisplayState = DisplayState.BODIES | DisplayState.AXIS | DisplayState.STAT | DisplayState.VERBOSE;
 
@@ -481,10 +483,23 @@ export class CollisionRenderer {
             this.camOrient);
     }
 
-    /** Registers keyboard shortcuts and mouse-wheel zoom-to-cursor. */
+    /** Registers keyboard shortcuts, mouse-wheel zoom, and click-drag pan. */
     private bindInput(): void {
         window.addEventListener("keydown", (ev: KeyboardEvent) => this.onKeyDown(ev));
         window.addEventListener("wheel", (ev: WheelEvent) => this.onWheel(ev), { passive: false });
+        window.addEventListener("mousedown", (ev: MouseEvent) => this.onMouseDown(ev));
+        window.addEventListener("mousemove", (ev: MouseEvent) => this.onMouseMove(ev));
+        window.addEventListener("mouseup", () => this.endPan());
+        window.addEventListener("blur", () => this.endPan());
+        this.canvas.style.cursor = "grab";
+    }
+
+    /** True when the event target is the left-hand control panel. */
+    private isUiTarget(target: EventTarget | null): boolean {
+        if (target == null || !(target instanceof HTMLElement)) {
+            return false;
+        }
+        return target.closest("form, .controls, input, select, button, label") != null;
     }
 
     /**
@@ -508,8 +523,7 @@ export class CollisionRenderer {
      * pointer is over the control panel.
      */
     private onWheel(ev: WheelEvent): void {
-        const target = ev.target as HTMLElement | null;
-        if (target != null && target.closest("form, .controls, input, select, button, label") != null) {
+        if (this.isUiTarget(ev.target)) {
             return;
         }
 
@@ -530,6 +544,50 @@ export class CollisionRenderer {
         this.camLookAt[1] += dy;
         this.adjustCamera();
         this.notifyFlagsChanged();
+    }
+
+    /**
+     * Starts a pan: the world point under the cursor is dragged with the mouse.
+     */
+    private onMouseDown(ev: MouseEvent): void {
+        if (ev.button !== 0 || this.isUiTarget(ev.target)) {
+            return;
+        }
+        ev.preventDefault();
+        this.panGrab = this.screenToWorld(ev.clientX, ev.clientY);
+        this.canvas.style.cursor = "grabbing";
+    }
+
+    /**
+     * Moves the view so the grabbed world point stays under the cursor.
+     */
+    private onMouseMove(ev: MouseEvent): void {
+        if (this.panGrab == null) {
+            return;
+        }
+        ev.preventDefault();
+        const rect = this.canvas.getBoundingClientRect();
+        const nx = ((ev.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
+        const ny = 1 - ((ev.clientY - rect.top) / Math.max(rect.height, 1)) * 2;
+        const halfH = this._fov / 2;
+        const halfW = halfH * (this.canvas.width / Math.max(this.canvas.height, 1));
+        const lookX = this.panGrab.x - nx * halfW;
+        const lookY = this.panGrab.y - ny * halfH;
+        const dx = lookX - this.camLookAt[0];
+        const dy = lookY - this.camLookAt[1];
+        this.camLookAt[0] = lookX;
+        this.camLookAt[1] = lookY;
+        this.camPos[0] += dx;
+        this.camPos[1] += dy;
+        this.adjustCamera();
+    }
+
+    private endPan(): void {
+        if (this.panGrab == null) {
+            return;
+        }
+        this.panGrab = null;
+        this.canvas.style.cursor = "grab";
     }
 
     /**
