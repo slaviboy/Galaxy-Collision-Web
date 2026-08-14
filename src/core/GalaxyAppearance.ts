@@ -204,10 +204,18 @@ export class GalaxyAppearance {
         }
 
         /**
-         * Fixed dust per galaxy — not shared, and not scaled by star count.
-         * Raising N only adds star points; both disks keep a full dusty haze.
+         * Dust tracks star count (~5 sprites per star, same idea as before)
+         * but each galaxy has its own buffer — raising G1 cannot clip G2.
+         * The area cap stops the compact G2 disk from additive-washing to white.
          */
-        const DUST_PER_GALAXY = 50000
+        const dustCountFor = (rMax: number, nStars: number): number => {
+            if (nStars <= 0) {
+                return 0
+            }
+            const byStars = nStars * 5
+            const byArea = Math.round(3500 * rMax)
+            return Math.min(byStars, byArea, 50000)
+        }
 
         // 2.) Dust — per galaxy. Offsets grow with the local star spacing so
         // a sparse disk still fills in; a dense disk keeps dust tight (no globes).
@@ -217,8 +225,9 @@ export class GalaxyAppearance {
             }
             const nS = parents.length
             const g0 = galaxyOf(parents[0])
+            const cap = dustCountFor(g0.rMax, nS)
             const cell = Math.max(0.04, 1.55 * g0.rMax * 0.85 / Math.sqrt(nS))
-            for (let i = 0; i < DUST_PER_GALAXY; ++i) {
+            for (let i = 0; i < cap; ++i) {
                 const parent = parents[i % nS]
                 const g = galaxyOf(parent)
                 const px = state[parent * STATE_STRIDE]
@@ -321,10 +330,11 @@ export class GalaxyAppearance {
                 push(parent, ox, oy, temp, mag, VISUAL_H2_CORE, phase, 0.28)
             }
         }
-        paintH2(g2Disk)
         paintH2(g1Disk)
+        paintH2(g2Disk)
         }
 
+        this._bh2 = bh2
         this._count = items.length
         this.parent = new Uint32Array(this._count)
         this.ox = new Float32Array(this._count)
@@ -338,7 +348,8 @@ export class GalaxyAppearance {
         this.flickerAmp = new Float32Array(this._count)
 
         this._starCount = 0
-        this._glowSprites = 0
+        this._glowSprites1 = 0
+        this._glowSprites2 = 0
         for (let i = 0; i < this._count; ++i) {
             const p = items[i]
             this.parent[i] = p.parent
@@ -354,21 +365,29 @@ export class GalaxyAppearance {
             if (p.type === VISUAL_STAR) {
                 this._starCount++
             }
+            else if (p.parent < bh2) {
+                this._glowSprites1++
+            }
             else {
-                this._glowSprites++
+                this._glowSprites2++
             }
         }
 
         this.packedStars = new Float32Array(this._starCount * FLOATS_PER_VISUAL)
-        this.packedGlow = new Float32Array(this._glowSprites * 6 * FLOATS_PER_GLOW_VERT)
+        this.packedGlow1 = new Float32Array(this._glowSprites1 * 6 * FLOATS_PER_GLOW_VERT)
+        this.packedGlow2 = new Float32Array(this._glowSprites2 * 6 * FLOATS_PER_GLOW_VERT)
     }
 
     public getStarPacked(): Float32Array {
         return this.packedStars
     }
 
-    public getGlowPacked(): Float32Array {
-        return this.packedGlow
+    public getGlowPacked1(): Float32Array {
+        return this.packedGlow1
+    }
+
+    public getGlowPacked2(): Float32Array {
+        return this.packedGlow2
     }
 
     /**
@@ -378,9 +397,12 @@ export class GalaxyAppearance {
      */
     public pack(state: Float64Array, n: number): void {
         const starDest = this.packedStars
-        const glowDest = this.packedGlow
+        const glowDest1 = this.packedGlow1
+        const glowDest2 = this.packedGlow2
+        const bh2 = this._bh2
         let si = 0
-        let gi = 0
+        let gi1 = 0
+        let gi2 = 0
         for (let i = 0; i < this._count; ++i) {
             const p = this.parent[i]
             if (p >= n) {
@@ -419,27 +441,36 @@ export class GalaxyAppearance {
                 si++
             }
             else {
+                const dest = p < bh2 ? glowDest1 : glowDest2
+                let gi = p < bh2 ? gi1 : gi2
                 for (let k = 0; k < 6; ++k) {
                     const corner = QUAD_CORNERS[k]
                     const vo = gi * FLOATS_PER_GLOW_VERT
-                    glowDest[vo] = x
-                    glowDest[vo + 1] = y
-                    glowDest[vo + 2] = 0
-                    glowDest[vo + 3] = this.r[i]
-                    glowDest[vo + 4] = this.g[i]
-                    glowDest[vo + 5] = this.b[i]
-                    glowDest[vo + 6] = 1
-                    glowDest[vo + 7] = this.mag[i]
-                    glowDest[vo + 8] = t
-                    glowDest[vo + 9] = this.flickerPhase[i]
-                    glowDest[vo + 10] = this.flickerAmp[i]
-                    glowDest[vo + 11] = corner[0]
-                    glowDest[vo + 12] = corner[1]
+                    dest[vo] = x
+                    dest[vo + 1] = y
+                    dest[vo + 2] = 0
+                    dest[vo + 3] = this.r[i]
+                    dest[vo + 4] = this.g[i]
+                    dest[vo + 5] = this.b[i]
+                    dest[vo + 6] = 1
+                    dest[vo + 7] = this.mag[i]
+                    dest[vo + 8] = t
+                    dest[vo + 9] = this.flickerPhase[i]
+                    dest[vo + 10] = this.flickerAmp[i]
+                    dest[vo + 11] = corner[0]
+                    dest[vo + 12] = corner[1]
                     gi++
+                }
+                if (p < bh2) {
+                    gi1 = gi
+                }
+                else {
+                    gi2 = gi
                 }
             }
         }
         this._starCount = si
-        this._glowSprites = gi / 6
+        this._glowSprites1 = gi1 / 6
+        this._glowSprites2 = gi2 / 6
     }
 }

@@ -46,7 +46,8 @@ export class CollisionRenderer {
     private vertRoi: VertexBufferLines;
     private vertBodies: VertexBufferParticles;
     private vertGalaxy: VertexBufferGalaxyStars;
-    private vertGalaxyDust: VertexBufferGalaxyDust;
+    private vertGalaxyDust1: VertexBufferGalaxyDust;
+    private vertGalaxyDust2: VertexBufferGalaxyDust;
     private appearance: GalaxyAppearance = new GalaxyAppearance();
     /** Galaxy-Renderer look (dust, red giants, H2) instead of white dots. */
     private _realisticLook: boolean = false;
@@ -106,7 +107,8 @@ export class CollisionRenderer {
         this.vertRoi = new VertexBufferLines(this.gl, 1, this.gl.DYNAMIC_DRAW);
         this.vertBodies = new VertexBufferParticles(this.gl);
         this.vertGalaxy = new VertexBufferGalaxyStars(this.gl);
-        this.vertGalaxyDust = new VertexBufferGalaxyDust(this.gl);
+        this.vertGalaxyDust1 = new VertexBufferGalaxyDust(this.gl);
+        this.vertGalaxyDust2 = new VertexBufferGalaxyDust(this.gl);
 
         this.statsEl = document.getElementById("statsOverlay");
         this.helpEl = document.getElementById("helpOverlay");
@@ -403,7 +405,8 @@ export class CollisionRenderer {
         this.vertRoi.initialize();
         this.vertBodies.initialize();
         this.vertGalaxy.initialize();
-        this.vertGalaxyDust.initialize();
+        this.vertGalaxyDust1.initialize();
+        this.vertGalaxyDust2.initialize();
 
         this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
         this.gl.disable(this.gl.DEPTH_TEST);
@@ -713,10 +716,11 @@ export class CollisionRenderer {
                 this.appearance.pack(this.solver.getState(), this.model.getN());
                 this.vertGalaxy.setShaderVariables(this.visualTime, 62, 52, 1);
                 this.vertGalaxy.updatePacked(this.appearance.getStarPacked(), this.appearance.starCount);
-                this.vertGalaxyDust.setShaderVariables(
-                    this.visualTime, 62, 52, 1,
-                    this._fov / Math.max(this.canvas.height, 1));
-                this.vertGalaxyDust.updatePacked(this.appearance.getGlowPacked(), this.appearance.glowVertexCount);
+                const worldPerPixel = this._fov / Math.max(this.canvas.height, 1);
+                this.vertGalaxyDust1.setShaderVariables(this.visualTime, 62, 52, 1, worldPerPixel);
+                this.vertGalaxyDust2.setShaderVariables(this.visualTime, 62, 52, 1, worldPerPixel);
+                this.vertGalaxyDust1.updatePacked(this.appearance.getGlowPacked1(), this.appearance.glowVertexCount1);
+                this.vertGalaxyDust2.updatePacked(this.appearance.getGlowPacked2(), this.appearance.glowVertexCount2);
             }
             else {
                 this.vertBodies.updateFromState(this.solver.getState(), this.model.getN());
@@ -747,7 +751,8 @@ export class CollisionRenderer {
         if (this.showBodies) {
             if (this._realisticLook) {
                 this.vertGalaxy.draw(this.matView, this.matProjection);
-                this.vertGalaxyDust.draw(this.matView, this.matProjection);
+                this.vertGalaxyDust1.draw(this.matView, this.matProjection);
+                this.vertGalaxyDust2.draw(this.matView, this.matProjection);
             }
             else {
                 this.vertBodies.draw(this.matView, this.matProjection);
