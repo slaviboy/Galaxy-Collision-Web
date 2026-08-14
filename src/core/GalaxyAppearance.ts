@@ -204,17 +204,18 @@ export class GalaxyAppearance {
         }
 
         /**
-         * Dust tracks star count (~5 sprites per star, same idea as before)
-         * but each galaxy has its own buffer — raising G1 cannot clip G2.
-         * The area cap stops the compact G2 disk from additive-washing to white.
+         * Dust tracks star count (~5 sprites per star) on a per-galaxy buffer.
+         * Larger disks get extra sprites so G1 matches G2's brightness; G2
+         * (rMax = 3) gets no size bonus so it stays punchy without washing out.
          */
         const dustCountFor = (rMax: number, nStars: number): number => {
             if (nStars <= 0) {
                 return 0
             }
             const byStars = nStars * 5
-            const byArea = Math.round(3500 * rMax)
-            return Math.min(byStars, byArea, 50000)
+            const areaExtra = Math.round(120 * Math.max(0, rMax * rMax - 9))
+            const washoutCap = Math.round(4200 * rMax)
+            return Math.min(byStars + areaExtra, washoutCap, 50000)
         }
 
         // 2.) Dust — per galaxy. Offsets grow with the local star spacing so
@@ -242,7 +243,7 @@ export class GalaxyAppearance {
                     Math.cos(ang) * d,
                     Math.sin(ang) * d,
                     tempFromRad(rad, g.rMax, armWarm),
-                    0.05 + 0.13 * rnd(),
+                    0.05 + 0.03 * g.scale + 0.13 * rnd(),
                     VISUAL_DUST,
                     0,
                     0)
