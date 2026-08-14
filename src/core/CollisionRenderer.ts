@@ -459,17 +459,19 @@ export class CollisionRenderer {
     }
 
     /**
-     * Orthographic projection of size `_fov`, aspect-corrected, plus lookAt.
-     * Matches C++ `glOrtho(-l,l,-l,l,-l,l)` with extra aspect for widescreen.
+     * Orthographic projection of size `_fov`, aspect-corrected, centered on
+     * `camLookAt`. Pan lives in the projection (shaders use `projMat` only).
      */
     private adjustCamera(): void {
-        let l: number = this._fov / 2.0;
-        let aspect: number = this.canvas.width / this.canvas.height;
+        const l: number = this._fov / 2.0;
+        const aspect: number = this.canvas.width / Math.max(this.canvas.height, 1);
+        const cx: number = this.camLookAt[0];
+        const cy: number = this.camLookAt[1];
 
         mat4.ortho(
             this.matProjection,
-            -l * aspect, l * aspect,
-            -l, l,
+            -l * aspect + cx, l * aspect + cx,
+            -l + cy, l + cy,
             -l, l);
 
         mat4.lookAt(
@@ -479,9 +481,55 @@ export class CollisionRenderer {
             this.camOrient);
     }
 
-    /** Registers the keyboard shortcuts from NBodyWnd. */
+    /** Registers keyboard shortcuts and mouse-wheel zoom-to-cursor. */
     private bindInput(): void {
         window.addEventListener("keydown", (ev: KeyboardEvent) => this.onKeyDown(ev));
+        window.addEventListener("wheel", (ev: WheelEvent) => this.onWheel(ev), { passive: false });
+    }
+
+    /**
+     * Converts a window mouse position to world XY under the current ortho view.
+     */
+    private screenToWorld(clientX: number, clientY: number): { x: number, y: number } {
+        const rect = this.canvas.getBoundingClientRect();
+        const nx = ((clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
+        const ny = 1 - ((clientY - rect.top) / Math.max(rect.height, 1)) * 2;
+        const halfH = this._fov / 2;
+        const halfW = halfH * (this.canvas.width / Math.max(this.canvas.height, 1));
+        return {
+            x: this.camLookAt[0] + nx * halfW,
+            y: this.camLookAt[1] + ny * halfH
+        };
+    }
+
+    /**
+     * Scroll-wheel zoom centered on the cursor (the world point under the
+     * mouse stays under the mouse, like a photo viewer). Ignored while the
+     * pointer is over the control panel.
+     */
+    private onWheel(ev: WheelEvent): void {
+        const target = ev.target as HTMLElement | null;
+        if (target != null && target.closest("form, .controls, input, select, button, label") != null) {
+            return;
+        }
+
+        ev.preventDefault();
+        const before = this.screenToWorld(ev.clientX, ev.clientY);
+        const scale = Math.exp(ev.deltaY * 0.0015);
+        const next = Math.min(80, Math.max(0.5, this._fov * scale));
+        if (Math.abs(next - this._fov) < 1e-9) {
+            return;
+        }
+        this._fov = next;
+        const after = this.screenToWorld(ev.clientX, ev.clientY);
+        const dx = before.x - after.x;
+        const dy = before.y - after.y;
+        this.camPos[0] += dx;
+        this.camPos[1] += dy;
+        this.camLookAt[0] += dx;
+        this.camLookAt[1] += dy;
+        this.adjustCamera();
+        this.notifyFlagsChanged();
     }
 
     /**
