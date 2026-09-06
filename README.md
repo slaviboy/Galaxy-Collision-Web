@@ -9,6 +9,11 @@ Barnes-Hut n-body galaxy collision, ported to TypeScript / WebGL2 from the C++ s
   <img src="https://raw.githubusercontent.com/slaviboy/RepositoryImages/main/apps/GalaxyCollisionWeb/Screenshot%202026-09-06%20at%2018.29.21.png" width="49%" />
 </p>
 
+
+## Live Demo
+
+**Live site:** [slaviboy.github.io/Galaxy-Collision-Web](https://slaviboy.github.io/Galaxy-Collision-Web/)
+
 ## Build
 
 1. Install dependencies:
